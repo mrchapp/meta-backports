@@ -1,0 +1,39 @@
+From 86f016a1a6140e5ef6e9bdb64dd093744eb549ab Mon Sep 17 00:00:00 2001
+From: Edwin Plauchu <edwin.plauchu.camacho@intel.com>
+Date: Wed, 27 Jul 2016 16:54:53 -0500
+Subject: [PATCH] xorg-xserver: upgrade xserver version from 1.18.3 to 1.18.4
+
+From version 1.18.3 to 1.18.4 modesetting driver has suffered several changes.
+One of this changes allow mouse works as expected with xf86-video-modesetting
+driver when system startup upon beaglebone.
+
+[YOCTO #9828]
+
+Signed-off-by: Edwin Plauchu <edwin.plauchu.camacho@intel.com>
+Signed-off-by: Ross Burton <ross.burton@intel.com>
+---
+ .../xorg-xserver/{xserver-xorg_1.18.3.bb => xserver-xorg_1.18.4.bb}   | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+ rename meta/recipes-graphics/xorg-xserver/{xserver-xorg_1.18.3.bb => xserver-xorg_1.18.4.bb} (86%)
+
+diff --git a/meta/recipes-graphics/xorg-xserver/xserver-xorg_1.18.3.bb b/meta/recipes-graphics/xorg-xserver/xserver-xorg_1.18.4.bb
+similarity index 86%
+rename from meta/recipes-graphics/xorg-xserver/xserver-xorg_1.18.3.bb
+rename to meta/recipes-graphics/xorg-xserver/xserver-xorg_1.18.4.bb
+index 27098f1..6700565 100644
+--- a/meta/recipes-graphics/xorg-xserver/xserver-xorg_1.18.3.bb
++++ b/meta/recipes-graphics/xorg-xserver/xserver-xorg_1.18.4.bb
+@@ -1,8 +1,8 @@
+ require xserver-xorg.inc
+ 
+ SRC_URI += "file://musl-arm-inb-outb.patch"
+-SRC_URI[md5sum] = "043d720bf2472a65bb8f0daa97f83dfa"
+-SRC_URI[sha256sum] = "ea739c22517cdbe2b5f7c0a5fd05fe8a10ac0629003e71c0c7862f4bb60142cd"
++SRC_URI[md5sum] = "d4842dfe3bd9a9d062f2fa1df9104a46"
++SRC_URI[sha256sum] = "278459b2c31d61a15655d95a72fb79930c480a6bb8cf9226e48a07df8b1d31c8"
+ 
+ # These extensions are now integrated into the server, so declare the migration
+ # path for in-place upgrades.
+-- 
+2.7.0
+
