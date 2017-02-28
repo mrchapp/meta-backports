@@ -1,5 +1,3 @@
-DEFAULT_PREFERENCE = "-1"
-
 require gstreamer1.0-plugins-base.inc
 
 LIC_FILES_CHKSUM = "file://COPYING;md5=c54ce9345727175ff66d17b67ff51f58 \
@@ -7,26 +5,14 @@ LIC_FILES_CHKSUM = "file://COPYING;md5=c54ce9345727175ff66d17b67ff51f58 \
                     file://common/coverage/coverage-report.pl;beginline=2;endline=17;md5=a4e1830fce078028c8f0974161272607"
 
 SRC_URI = " \
-    git://anongit.freedesktop.org/gstreamer/gst-plugins-base;branch=1.8;name=base \
-    git://anongit.freedesktop.org/gstreamer/common;destsuffix=git/common;name=common \
+    http://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-${PV}.tar.xz \
     file://get-caps-from-src-pad-when-query-caps.patch \
     file://0003-ssaparse-enhance-SSA-text-lines-parsing.patch \
     file://0004-subparse-set-need_segment-after-sink-pad-received-GS.patch \
-    file://encodebin-Need-more-buffers-in-output-queue-for-bett.patch \
     file://make-gio_unix_2_0-dependency-configurable.patch \
     file://0001-introspection.m4-prefix-pkgconfig-paths-with-PKG_CON.patch \
 "
+SRC_URI[md5sum] = "77f5379c4ca677616b415e3b3ff95578"
+SRC_URI[sha256sum] = "5067dce3afe197a9536fea0107c77213fab536dff4a213b07fc60378d5510675"
 
-PV = "1.8.2+git${SRCPV}"
-
-UPSTREAM_CHECK_GITTAGREGEX = "(?P<pver>(\d+(\.\d+)+))"
-
-SRCREV_base = "70f3750773bf5dba4098f6d72d63aa6c84f1f539"
-SRCREV_common = "f363b3205658a38e84fa77f19dee218cd4445275"
-SRCREV_FORMAT = "base"
-
-S = "${WORKDIR}/git"
-
-do_configure_prepend() {
-	${S}/autogen.sh --noconfigure
-}
+S = "${WORKDIR}/gst-plugins-base-${PV}"
