@@ -1,0 +1,36 @@
+From 67ed7bc2514cb3acc9625a5073cee68d135697e1 Mon Sep 17 00:00:00 2001
+From: Lennart Poettering <lennart@poettering.net>
+Date: Tue, 9 May 2017 21:10:55 +0200
+Subject: [PATCH] 50-udev-default.rules.in: set correct group for mediaX/cecX
+ (#5921)
+
+The /dev/mediaX and /dev/cecX devices belong to the video group.
+Add two default rules for that.
+
+The /dev/cecX devices were introduced in kernel 4.8 in staging and moved
+out of staging in 4.10. These devices support the HDMI CEC bus.
+
+The /dev/mediaX devices are much older, but because they are not used very
+frequently nobody got around to adding this rule to systemd. They let the
+user control complex media pipelines.
+(cherry picked from commit 9bfc0df113edd50bd01acba02a42f2a13db83d71)
+---
+ rules/50-udev-default.rules | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/rules/50-udev-default.rules b/rules/50-udev-default.rules
+index e9eeb8518..26445f2c8 100644
+--- a/rules/50-udev-default.rules
++++ b/rules/50-udev-default.rules
+@@ -34,6 +34,8 @@ SUBSYSTEM=="video4linux", GROUP="video"
+ SUBSYSTEM=="graphics", GROUP="video"
+ SUBSYSTEM=="drm", GROUP="video"
+ SUBSYSTEM=="dvb", GROUP="video"
++SUBSYSTEM=="media", GROUP="video"
++SUBSYSTEM=="cec", GROUP="video"
+ 
+ SUBSYSTEM=="sound", GROUP="audio", \
+   OPTIONS+="static_node=snd/seq", OPTIONS+="static_node=snd/timer"
+-- 
+2.13.0
+
