@@ -26,6 +26,13 @@ LIC_FILES_CHKSUM = "file://COPYING.GPLv2;md5=b234ee4d69f5fce4486a80fdaf4a4263 \
 SRC_URI = "https://www.ffmpeg.org/releases/${BP}.tar.xz \
            file://mips64_cpu_detection.patch \
            file://0001-build-fix-for-mips.patch \
+           file://0001-libavcodec-v4l2-add-support-for-v4l2-mem2mem-codecs.patch \
+           file://0002-avcodec-Makefile-skip-v4l2_m2m-headers-if-needed.patch \
+           file://0003-avcodec-v4l2_m2m-add-missing-header-inclusions.patch \
+           file://0004-avcodec-v4l2_buffers-More-clear-return-code-document.patch \
+           file://0005-avcodec-v4l2_context-Reduce-spelling-variations.patch \
+           file://0006-avcodec-v4l2_context-remove-unnecessary-timeout-whil.patch \
+           file://0007-avcodec-v4l2-set-sizeimage-param-for-non-raw-buffers.patch \
           "
 SRC_URI[md5sum] = "743dc66ebe67180283b92d029f690d0f"
 SRC_URI[sha256sum] = "d2a9002cdc6b533b59728827186c044ad02ba64841f1b7cd6c21779875453a1e"
