@@ -91,6 +91,7 @@ RDEPENDS_${PN} = "\
     curl \
     e2fsprogs-mke2fs \
     expect \
+    file \
     gawk \
     gzip \
     iproute2 \
