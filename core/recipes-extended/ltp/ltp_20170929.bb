@@ -100,6 +100,7 @@ RDEPENDS_${PN} = "\
     logrotate \
     perl \
     python-core \
+    quota \
     unzip \
     util-linux \
     which \
