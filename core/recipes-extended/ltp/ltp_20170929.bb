@@ -50,6 +50,7 @@ SRC_URI = "git://github.com/linux-test-project/ltp.git \
            file://0036-testcases-network-nfsv4-acl-acl1.c-Security-fix-on-s.patch \
            file://0037-commands-nm-fix-typo-INSTALL_TARTGETS-INSTALL_TARGET.patch \
            file://0038-fanotify-fix-build-failure-with-Werror-format-securi.patch \
+           file://0039-containers-netns-load-veth-module.patch \
            "
 
 S = "${WORKDIR}/git"
@@ -100,6 +101,7 @@ RDEPENDS_${PN} = "\
     ldd \
     libaio \
     logrotate \
+    net-tools \
     perl \
     python-core \
     quota \

@@ -1,0 +1,50 @@
+From d1ec25ebef481c8084b45c4bd5e7c0723397b387 Mon Sep 17 00:00:00 2001
+From: Fathi Boudra <fathi.boudra@linaro.org>
+Date: Thu, 12 Oct 2017 14:17:12 +0300
+Subject: [PATCH 1/1] containers: netns: load veth module
+
+Most of regular distributions are shipping the virtual ethernet driver as
+a kernel module. The test assumes it's built-in.
+Attempt to load the veth module in the netns_setup() function.
+It will allow to get the tests running on a distro kernel and avoid to
+build a custom kernel for LTP purpose.
+
+Signed-off-by: Fathi Boudra <fathi.boudra@linaro.org>
+
+Upstream-Status: Submitted [https://github.com/linux-test-project/ltp/pull/223]
+---
+ testcases/kernel/containers/README                | 2 +-
+ testcases/kernel/containers/netns/netns_helper.sh | 4 +++-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/testcases/kernel/containers/README b/testcases/kernel/containers/README
+index 0020938be..f719a6543 100644
+--- a/testcases/kernel/containers/README
++++ b/testcases/kernel/containers/README
+@@ -28,7 +28,7 @@ CONFIG_IPC_NS=y
+ CONFIG_USER_NS=y
+ CONFIG_PID_NS=y
+ CONFIG_NET_NS=y
+-CONFIG_VETH=y
++CONFIG_VETH=y(or =m)
+ CONFIG_MACVLAN=y(optional)
+ 
+ The container test automation suite helps run the container functionality
+diff --git a/testcases/kernel/containers/netns/netns_helper.sh b/testcases/kernel/containers/netns/netns_helper.sh
+index a95cdf206..c164952a8 100755
+--- a/testcases/kernel/containers/netns/netns_helper.sh
++++ b/testcases/kernel/containers/netns/netns_helper.sh
+@@ -110,7 +110,9 @@ tst_check_iproute()
+ netns_setup()
+ {
+ 	tst_require_root
+-	tst_check_cmds ip
++	tst_check_cmds ip modprobe
++
++	modprobe veth > /dev/null 2>&1
+ 
+ 	case "$1" in
+ 	ns_exec)
+-- 
+2.14.2
+
