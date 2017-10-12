@@ -101,6 +101,7 @@ RDEPENDS_${PN} = "\
     perl \
     python-core \
     quota \
+    tar \
     unzip \
     util-linux \
     which \
