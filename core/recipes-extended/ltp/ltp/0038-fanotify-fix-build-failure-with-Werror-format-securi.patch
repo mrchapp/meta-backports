@@ -1,0 +1,38 @@
+From c367c135ef33cd6487f2da6bfddb12badc87ffb1 Mon Sep 17 00:00:00 2001
+From: Fathi Boudra <fathi.boudra@linaro.org>
+Date: Thu, 12 Oct 2017 11:26:41 +0300
+Subject: [PATCH 1/1] fanotify: fix build failure with -Werror=format-security
+
+fanotify08.c:56:3: error: format not a string literal and no format arguments [-Werror=format-security]
+   tst_res(TPASS, msg);
+   ^~~~~~~
+fanotify08.c:58:3: error: format not a string literal and no format arguments [-Werror=format-security]
+   tst_res(TFAIL, msg);
+   ^~~~~~~
+
+Signed-off-by: Fathi Boudra <fathi.boudra@linaro.org>
+
+Upstream-Status: Backport [https://github.com/linux-test-project/ltp/commit/16bd1d479726fb6ee21ebe5b58fbf28c85c938a3]
+---
+ testcases/kernel/syscalls/fanotify/fanotify08.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/testcases/kernel/syscalls/fanotify/fanotify08.c b/testcases/kernel/syscalls/fanotify/fanotify08.c
+index dc916ec13..8d3d40e46 100644
+--- a/testcases/kernel/syscalls/fanotify/fanotify08.c
++++ b/testcases/kernel/syscalls/fanotify/fanotify08.c
+@@ -53,9 +53,9 @@ static void test_init_bit(unsigned int fan_bit,
+ 	ret = SAFE_FCNTL(fd_notify, F_GETFD);
+ 
+ 	if ((ret & FD_CLOEXEC) == fd_bit) {
+-		tst_res(TPASS, msg);
++		tst_res(TPASS, "%s", msg);
+ 	} else {
+-		tst_res(TFAIL, msg);
++		tst_res(TFAIL, "%s", msg);
+ 	}
+ 
+ 	SAFE_CLOSE(fd_notify);
+-- 
+2.14.2
+
