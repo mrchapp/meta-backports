@@ -11,6 +11,13 @@ SRC_URI = " \
     file://ensure-valid-sentinel-for-gst_structure_get.patch \
     file://0001-introspection.m4-prefix-pkgconfig-paths-with-PKG_CON.patch \
     file://0001-v4l2-Fix-4K-colorimetry.patch \
+    file://0001-v4l2videodec-add-some-useful-debug-messages.patch \
+    file://0002-v4l2-increase-pre-allocated-encoded-buffer-size.patch \
+    file://0003-v4l2pool-Fix-wrong-error-message.patch \
+    file://0004-v4l2videodec-Remove-unused-forward-declaration.patch \
+    file://0005-v4l2-Add-Video-Encoder-support.patch \
+    file://0006-v4l2-Don-t-redefine-__bitwise-if-already-set.patch \
+    file://0007-v4l2videoenc-Make-sure-min_buffers-is-valid.patch \
 "
 SRC_URI[md5sum] = "20254217d9805484532e08ff1c3aa296"
 SRC_URI[sha256sum] = "5591ee7208ab30289a30658a82b76bf87169c927572d9b794f3a41ed48e1ee96"
