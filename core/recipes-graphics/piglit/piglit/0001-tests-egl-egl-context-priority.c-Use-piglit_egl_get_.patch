@@ -1,0 +1,39 @@
+From 3b6c3abe3698abb0ae08d14a399eea29805cafd6 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?An=C3=ADbal=20Lim=C3=B3n?= <anibal.limon@linaro.org>
+Date: Fri, 24 Nov 2017 10:11:42 -0600
+Subject: [PATCH] tests/egl/egl-context-priority.c: Use
+ piglit_egl_get_default_display
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Some EGL implementations do not actually ship all Khronos-extensions.
+As it turns out, the Mali 450 driver does not include eglGetPlatformDisplay
+symbol so there is not grauntee to exists use piglit_egl_get_default_display
+wrapper instead. See rev 45095dc08b.
+
+Signed-off-by: Aníbal Limón <anibal.limon@linaro.org>
+Signed-off-by: Daniel Díaz <daniel.diaz@linaro.org>
+
+Upstream-Status: Submitted [piglit@lists.freedesktop.org]
+---
+ tests/egl/egl-context-priority.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/tests/egl/egl-context-priority.c b/tests/egl/egl-context-priority.c
+index 7f26fc614..9590ccae3 100644
+--- a/tests/egl/egl-context-priority.c
++++ b/tests/egl/egl-context-priority.c
+@@ -99,8 +99,7 @@ piglit_init(int argc, char **argv)
+ 	if (!strstr(exts, "EGL_MESA_platform_surfaceless"))
+ 		piglit_report_result(PIGLIT_SKIP);
+ 
+-	dpy = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA,
+-				    EGL_DEFAULT_DISPLAY, NULL);
++	dpy = piglit_egl_get_default_display(EGL_PLATFORM_SURFACELESS_MESA);
+ 
+ 	ok = eglInitialize(dpy, &major, &minor);
+ 	if (!ok) {
+-- 
+2.11.0
+
