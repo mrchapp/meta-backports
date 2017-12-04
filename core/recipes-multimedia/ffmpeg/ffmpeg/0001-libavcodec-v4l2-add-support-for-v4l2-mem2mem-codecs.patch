@@ -1,0 +1,3214 @@
+From a293bad738e325079cd5e1ba1a7b770650287431 Mon Sep 17 00:00:00 2001
+From: Jorge Ramirez-Ortiz <jorge.ramirez-ortiz@linaro.org>
+Date: Mon, 2 Oct 2017 10:54:36 +0200
+Subject: [PATCH 1/7] libavcodec: v4l2: add support for v4l2 mem2mem codecs
+
+    This patchset enhances Alexis Ballier's original patch and validates
+    it using Qualcomm's Venus hardware (driver recently landed upstream
+    [1]).
+
+    This has been tested on Qualcomm's DragonBoard 410c and 820c
+    Configure/make scripts have been validated on Ubuntu 10.04 and
+    16.04.
+
+    Tested decoders:
+           - h264
+           - h263
+           - mpeg4
+           - vp8
+           - vp9
+           - hevc
+
+    Tested encoders:
+           - h264
+           - h263
+           - mpeg4
+
+    Tested transcoding (concurrent encoding/decoding)
+
+    Some of the changes introduced:
+        - v4l2: code cleanup and abstractions added
+        - v4l2: fix display size for NV12 output pool.
+        - v4l2: handle EOS (EPIPE and draining)
+        - v4l2: vp8 and mpeg4 decoding and encoding.
+        - v4l2: hevc and vp9 support.
+        - v4l2: generate EOF on dequeue errors.
+        - v4l2: h264_mp4toannexb filtering.
+        - v4l2: fixed make install and fate issues.
+        - v4l2: codecs enabled/disabled depending on pixfmt defined
+        - v4l2: pass timebase/framerate to the context
+        - v4l2: runtime decoder reconfiguration.
+        - v4l2: add more frame information
+        - v4l2: free hardware resources on last reference being released
+        - v4l2: encoding: disable b-frames for upstreaming (patch required)
+
+    [1] https://lwn.net/Articles/697956/
+
+    System Level view:
+        v42l_m2m_enc/dec --> v4l2_m2m --> v4l2_context --> v4l2_buffers
+
+    Reviewed-by: Jorge Ramirez <jorge.ramirez-ortiz@linaro.org>
+    Reviewed-by: Alexis Ballier <aballier@gentoo.org>
+    Tested-by: Jorge Ramirez <jorge.ramirez-ortiz@linaro.org>
+---
+ Changelog                 |   2 +-
+ configure                 |  34 ++-
+ libavcodec/Makefile       |  15 ++
+ libavcodec/allcodecs.c    |   9 +
+ libavcodec/v4l2_buffers.c | 453 +++++++++++++++++++++++++++++++
+ libavcodec/v4l2_buffers.h | 121 +++++++++
+ libavcodec/v4l2_context.c | 667 ++++++++++++++++++++++++++++++++++++++++++++++
+ libavcodec/v4l2_context.h | 181 +++++++++++++
+ libavcodec/v4l2_fmt.c     | 182 +++++++++++++
+ libavcodec/v4l2_fmt.h     |  34 +++
+ libavcodec/v4l2_m2m.c     | 404 ++++++++++++++++++++++++++++
+ libavcodec/v4l2_m2m.h     | 108 ++++++++
+ libavcodec/v4l2_m2m_dec.c | 325 ++++++++++++++++++++++
+ libavcodec/v4l2_m2m_enc.c | 352 ++++++++++++++++++++++++
+ 14 files changed, 2884 insertions(+), 3 deletions(-)
+ create mode 100644 libavcodec/v4l2_buffers.c
+ create mode 100644 libavcodec/v4l2_buffers.h
+ create mode 100644 libavcodec/v4l2_context.c
+ create mode 100644 libavcodec/v4l2_context.h
+ create mode 100644 libavcodec/v4l2_fmt.c
+ create mode 100644 libavcodec/v4l2_fmt.h
+ create mode 100644 libavcodec/v4l2_m2m.c
+ create mode 100644 libavcodec/v4l2_m2m.h
+ create mode 100644 libavcodec/v4l2_m2m_dec.c
+ create mode 100644 libavcodec/v4l2_m2m_enc.c
+
+diff --git a/Changelog b/Changelog
+index 8dc2104d10..5117fbbe11 100644
+--- a/Changelog
++++ b/Changelog
+@@ -81,7 +81,7 @@ version 3.3.3:
+ - avcodec/indeo4: Check remaining data in Pic hdr extension parsing code
+ - avcodec/ac3dec_fixed: Fix multiple runtime error: signed integer overflow: -39271008 * 59 cannot be represented in type 'int'
+ - lavc/aarch64/simple_idct: fix idct_col4_top coefficient
+-
+++- V4L2 mem2mem HW assisted codecs
+ 
+ version 3.3.2:
+ - avcodec/mpeg4videodec: Fix runtime error: signed integer overflow: 53098 * 40448 cannot be represented in type 'int'
+diff --git a/configure b/configure
+index 23823e3b70..47e4ef976c 100755
+--- a/configure
++++ b/configure
+@@ -185,6 +185,7 @@ Individual component options:
+   --enable-filter=NAME     enable filter NAME
+   --disable-filter=NAME    disable filter NAME
+   --disable-filters        disable all filters
++  --disable-v4l2_m2m       disable V4L2 mem2mem code [autodetect]
+ 
+ External library support:
+ 
+@@ -1602,6 +1603,7 @@ HWACCEL_AUTODETECT_LIBRARY_LIST="
+     vda
+     vdpau
+     videotoolbox_hwaccel
++    v4l2_m2m
+     xvmc
+ "
+ 
+@@ -2602,7 +2604,6 @@ vdpau_deps="vdpau_vdpau_h vdpau_vdpau_x11_h"
+ videotoolbox_hwaccel_deps="videotoolbox pthreads"
+ videotoolbox_hwaccel_extralibs="-framework QuartzCore"
+ xvmc_deps="X11_extensions_XvMClib_h"
+-
+ h263_vaapi_hwaccel_deps="vaapi"
+ h263_vaapi_hwaccel_select="h263_decoder"
+ h263_videotoolbox_hwaccel_deps="videotoolbox"
+@@ -2752,6 +2753,7 @@ omx_extralibs='$ldl'
+ qsvdec_select="qsv"
+ qsvenc_select="qsv"
+ vaapi_encode_deps="vaapi"
++v4l2_m2m_deps_any="linux_videodev2_h"
+ 
+ hwupload_cuda_filter_deps="cuda"
+ scale_npp_filter_deps="cuda libnpp"
+@@ -2759,6 +2761,22 @@ scale_npp_filter_deps="cuda libnpp"
+ nvenc_deps="cuda"
+ nvenc_deps_any="dlopen LoadLibrary"
+ nvenc_encoder_deps="nvenc"
++
++h264_v4l2m2m_decoder_deps="v4l2_m2m h264_v4l2_m2m"
++h264_v4l2m2m_encoder_deps="v4l2_m2m h264_v4l2_m2m"
++h263_v4l2m2m_decoder_deps="v4l2_m2m h263_v4l2_m2m"
++h263_v4l2m2m_encoder_deps="v4l2_m2m h263_v4l2_m2m"
++hevc_v4l2m2m_decoder_deps="v4l2_m2m hevc_v4l2_m2m"
++hevc_v4l2m2m_encoder_deps="v4l2_m2m hevc_v4l2_m2m"
++mpeg1_v4l2m2m_decoder_deps="v4l2_m2m mpeg1_v4l2_m2m"
++mpeg2_v4l2m2m_decoder_deps="v4l2_m2m mpeg2_v4l2_m2m"
++mpeg4_v4l2m2m_decoder_deps="v4l2_m2m mpeg4_v4l2_m2m"
++mpeg4_v4l2m2m_encoder_deps="v4l2_m2m mpeg4_v4l2_m2m"
++vc1_v4l2m2m_decoder_deps="v4l2_m2m vc1_v4l2_m2m"
++vp8_v4l2m2m_decoder_deps="v4l2_m2m vp8_v4l2_m2m"
++vp8_v4l2m2m_encoder_deps="v4l2_m2m vp8_v4l2_m2m"
++vp9_v4l2m2m_decoder_deps="v4l2_m2m vp9_v4l2_m2m"
++
+ h264_cuvid_decoder_deps="cuda cuvid"
+ h264_cuvid_decoder_select="h264_mp4toannexb_bsf"
+ h264_nvenc_encoder_deps="nvenc"
+@@ -3548,7 +3566,7 @@ done
+ enable_weak audiotoolbox
+ 
+ # Enable hwaccels by default.
+-enable_weak d3d11va dxva2 vaapi vda vdpau videotoolbox_hwaccel xvmc
++enable_weak d3d11va dxva2 vaapi vda vdpau videotoolbox_hwaccel xvmc v4l2_m2m
+ enable_weak xlib
+ 
+ enable_weak cuda cuvid nvenc vda_framework videotoolbox videotoolbox_encoder
+@@ -5988,8 +6006,20 @@ check_header linux/videodev.h
+ check_header linux/videodev2.h
+ check_code cc linux/videodev2.h "struct v4l2_frmsizeenum vfse; vfse.discrete.width = 0;" && enable_safe struct_v4l2_frmivalenum_discrete
+ 
++# check V4L2 codecs available in the API
+ check_header sys/videoio.h
++check_header linux/videodev2.h
+ check_code cc sys/videoio.h "struct v4l2_frmsizeenum vfse; vfse.discrete.width = 0;" && enable_safe struct_v4l2_frmivalenum_discrete
++check_code cc linux/videodev2.h "int i = V4L2_CAP_VIDEO_M2M_MPLANE | V4L2_CAP_VIDEO_M2M | V4L2_BUF_FLAG_LAST;" || disable v4l2_m2m
++check_code cc linux/videodev2.h "int i = V4L2_PIX_FMT_VC1_ANNEX_G;" && enable vc1_v4l2_m2m
++check_code cc linux/videodev2.h "int i = V4L2_PIX_FMT_MPEG1;" && enable mpeg1_v4l2_m2m
++check_code cc linux/videodev2.h "int i = V4L2_PIX_FMT_MPEG2;" && enable mpeg2_v4l2_m2m
++check_code cc linux/videodev2.h "int i = V4L2_PIX_FMT_MPEG4;" && enable mpeg4_v4l2_m2m
++check_code cc linux/videodev2.h "int i = V4L2_PIX_FMT_HEVC;" && enable hevc_v4l2_m2m
++check_code cc linux/videodev2.h "int i = V4L2_PIX_FMT_H263;" && enable h263_v4l2_m2m
++check_code cc linux/videodev2.h "int i = V4L2_PIX_FMT_H264;" && enable h264_v4l2_m2m
++check_code cc linux/videodev2.h "int i = V4L2_PIX_FMT_VP8;" && enable vp8_v4l2_m2m
++check_code cc linux/videodev2.h "int i = V4L2_PIX_FMT_VP9;" && enable vp9_v4l2_m2m
+ 
+ check_func_headers "windows.h vfw.h" capCreateCaptureWindow "$vfwcap_indev_extralibs"
+ # check that WM_CAP_DRIVER_CONNECT is defined to the proper value
+diff --git a/libavcodec/Makefile b/libavcodec/Makefile
+index 0dd0c7b1bb..dba03b697b 100644
+--- a/libavcodec/Makefile
++++ b/libavcodec/Makefile
+@@ -136,6 +136,7 @@ OBJS-$(CONFIG_VIDEODSP)                += videodsp.o
+ OBJS-$(CONFIG_VP3DSP)                  += vp3dsp.o
+ OBJS-$(CONFIG_VP56DSP)                 += vp56dsp.o
+ OBJS-$(CONFIG_VP8DSP)                  += vp8dsp.o
++OBJS-$(CONFIG_V4L2_M2M)                += v4l2_m2m.o v4l2_context.o v4l2_buffers.o v4l2_fmt.o
+ OBJS-$(CONFIG_WMA_FREQS)               += wma_freqs.o
+ OBJS-$(CONFIG_WMV2DSP)                 += wmv2dsp.o
+ 
+@@ -315,6 +316,8 @@ OBJS-$(CONFIG_H263_DECODER)            += h263dec.o h263.o ituh263dec.o        \
+                                           intelh263dec.o h263data.o
+ OBJS-$(CONFIG_H263_ENCODER)            += mpeg4videoenc.o mpeg4video.o  \
+                                           h263.o ituh263enc.o flvenc.o h263data.o
++OBJS-$(CONFIG_H263_V4L2M2M_DECODER)    += v4l2_m2m_dec.o
++OBJS-$(CONFIG_H263_V4L2M2M_ENCODER)    += v4l2_m2m_enc.o
+ OBJS-$(CONFIG_H264_DECODER)            += h264dec.o h264_cabac.o h264_cavlc.o \
+                                           h264_direct.o h264_loopfilter.o  \
+                                           h264_mb.o h264_picture.o \
+@@ -332,6 +335,8 @@ OBJS-$(CONFIG_H264_QSV_DECODER)        += qsvdec_h2645.o
+ OBJS-$(CONFIG_H264_QSV_ENCODER)        += qsvenc_h264.o
+ OBJS-$(CONFIG_H264_VAAPI_ENCODER)      += vaapi_encode_h264.o vaapi_encode_h26x.o
+ OBJS-$(CONFIG_H264_VIDEOTOOLBOX_ENCODER) += videotoolboxenc.o
++OBJS-$(CONFIG_H264_V4L2M2M_DECODER)    += v4l2_m2m_dec.o
++OBJS-$(CONFIG_H264_V4L2M2M_ENCODER)    += v4l2_m2m_enc.o
+ OBJS-$(CONFIG_HAP_DECODER)             += hapdec.o hap.o
+ OBJS-$(CONFIG_HAP_ENCODER)             += hapenc.o hap.o
+ OBJS-$(CONFIG_HEVC_DECODER)            += hevcdec.o hevc_mvs.o hevc_ps.o hevc_sei.o \
+@@ -344,6 +349,8 @@ OBJS-$(CONFIG_NVENC_HEVC_ENCODER)      += nvenc_hevc.o
+ OBJS-$(CONFIG_HEVC_QSV_DECODER)        += qsvdec_h2645.o
+ OBJS-$(CONFIG_HEVC_QSV_ENCODER)        += qsvenc_hevc.o hevc_ps_enc.o h2645_parse.o
+ OBJS-$(CONFIG_HEVC_VAAPI_ENCODER)      += vaapi_encode_h265.o vaapi_encode_h26x.o
++OBJS-$(CONFIG_HEVC_V4L2M2M_DECODER)    += v4l2_m2m_dec.o
++OBJS-$(CONFIG_HEVC_V4L2M2M_ENCODER)    += v4l2_m2m_enc.o
+ OBJS-$(CONFIG_HNM4_VIDEO_DECODER)      += hnm4video.o
+ OBJS-$(CONFIG_HQ_HQA_DECODER)          += hq_hqa.o hq_hqadata.o hq_hqadsp.o \
+                                           canopus.o
+@@ -413,15 +420,19 @@ OBJS-$(CONFIG_MPC8_DECODER)            += mpc8.o mpc.o
+ OBJS-$(CONFIG_MPEGVIDEO_DECODER)       += mpeg12dec.o mpeg12.o mpeg12data.o
+ OBJS-$(CONFIG_MPEG1VIDEO_DECODER)      += mpeg12dec.o mpeg12.o mpeg12data.o
+ OBJS-$(CONFIG_MPEG1VIDEO_ENCODER)      += mpeg12enc.o mpeg12.o
++OBJS-$(CONFIG_MPEG1_V4L2M2M_DECODER)   += v4l2_m2m_dec.o
+ OBJS-$(CONFIG_MPEG2_MMAL_DECODER)      += mmaldec.o
+ OBJS-$(CONFIG_MPEG2_QSV_DECODER)       += qsvdec_other.o
+ OBJS-$(CONFIG_MPEG2_QSV_ENCODER)       += qsvenc_mpeg2.o
+ OBJS-$(CONFIG_MPEG2VIDEO_DECODER)      += mpeg12dec.o mpeg12.o mpeg12data.o
+ OBJS-$(CONFIG_MPEG2VIDEO_ENCODER)      += mpeg12enc.o mpeg12.o
+ OBJS-$(CONFIG_MPEG2_VAAPI_ENCODER)     += vaapi_encode_mpeg2.o
++OBJS-$(CONFIG_MPEG2_V4L2M2M_DECODER)   += v4l2_m2m_dec.o
+ OBJS-$(CONFIG_MPEG4_DECODER)           += xvididct.o
+ OBJS-$(CONFIG_MPEG4_MEDIACODEC_DECODER) += mediacodecdec.o
+ OBJS-$(CONFIG_MPEG4_OMX_ENCODER)       += omx.o
++OBJS-$(CONFIG_MPEG4_V4L2M2M_DECODER)   += v4l2_m2m_dec.o
++OBJS-$(CONFIG_MPEG4_V4L2M2M_ENCODER)   += v4l2_m2m_enc.o
+ OBJS-$(CONFIG_MPL2_DECODER)            += mpl2dec.o ass.o
+ OBJS-$(CONFIG_MSA1_DECODER)            += mss3.o
+ OBJS-$(CONFIG_MSMPEG4V1_DECODER)       += msmpeg4dec.o msmpeg4.o msmpeg4data.o
+@@ -592,6 +603,7 @@ OBJS-$(CONFIG_VC1_DECODER)             += vc1dec.o vc1_block.o vc1_loopfilter.o
+ OBJS-$(CONFIG_VC1_CUVID_DECODER)       += cuvid.o
+ OBJS-$(CONFIG_VC1_MMAL_DECODER)        += mmaldec.o
+ OBJS-$(CONFIG_VC1_QSV_DECODER)         += qsvdec_other.o
++OBJS-$(CONFIG_VC1_V4L2M2M_DECODER)     += v4l2_m2m_dec.o
+ OBJS-$(CONFIG_VC2_ENCODER)             += vc2enc.o vc2enc_dwt.o diractab.o
+ OBJS-$(CONFIG_VCR1_DECODER)            += vcr1.o
+ OBJS-$(CONFIG_VMDAUDIO_DECODER)        += vmdaudio.o
+@@ -611,12 +623,15 @@ OBJS-$(CONFIG_VP8_CUVID_DECODER)       += cuvid.o
+ OBJS-$(CONFIG_VP8_MEDIACODEC_DECODER)  += mediacodecdec.o
+ OBJS-$(CONFIG_VP8_QSV_DECODER)         += qsvdec_other.o
+ OBJS-$(CONFIG_VP8_VAAPI_ENCODER)       += vaapi_encode_vp8.o
++OBJS-$(CONFIG_VP8_V4L2M2M_DECODER)     += v4l2_m2m_dec.o
++OBJS-$(CONFIG_VP8_V4L2M2M_ENCODER)     += v4l2_m2m_enc.o
+ OBJS-$(CONFIG_VP9_DECODER)             += vp9.o vp9data.o vp9dsp.o vp9lpf.o vp9recon.o \
+                                           vp9block.o vp9prob.o vp9mvs.o vp56rac.o \
+                                           vp9dsp_8bpp.o vp9dsp_10bpp.o vp9dsp_12bpp.o
+ OBJS-$(CONFIG_VP9_CUVID_DECODER)       += cuvid.o
+ OBJS-$(CONFIG_VP9_MEDIACODEC_DECODER)  += mediacodecdec.o
+ OBJS-$(CONFIG_VPLAYER_DECODER)         += textdec.o ass.o
++OBJS-$(CONFIG_VP9_V4L2M2M_DECODER)     += v4l2_m2m_dec.o
+ OBJS-$(CONFIG_VQA_DECODER)             += vqavideo.o
+ OBJS-$(CONFIG_WAVPACK_DECODER)         += wavpack.o
+ OBJS-$(CONFIG_WAVPACK_ENCODER)         += wavpackenc.o
+diff --git a/libavcodec/allcodecs.c b/libavcodec/allcodecs.c
+index 4df4772e02..b6551167f2 100644
+--- a/libavcodec/allcodecs.c
++++ b/libavcodec/allcodecs.c
+@@ -199,8 +199,10 @@ static void register_all(void)
+     REGISTER_ENCDEC (H263,              h263);
+     REGISTER_DECODER(H263I,             h263i);
+     REGISTER_ENCDEC (H263P,             h263p);
++    REGISTER_ENCDEC (H263_V4L2M2M,      h263_v4l2m2m);
+     REGISTER_DECODER(H264,              h264);
+     REGISTER_DECODER(H264_CRYSTALHD,    h264_crystalhd);
++    REGISTER_ENCDEC (H264_V4L2M2M,      h264_v4l2m2m);
+     REGISTER_DECODER(H264_MEDIACODEC,   h264_mediacodec);
+     REGISTER_DECODER(H264_MMAL,         h264_mmal);
+     REGISTER_DECODER(H264_QSV,          h264_qsv);
+@@ -211,6 +213,7 @@ static void register_all(void)
+     REGISTER_ENCDEC (HAP,               hap);
+     REGISTER_DECODER(HEVC,              hevc);
+     REGISTER_DECODER(HEVC_QSV,          hevc_qsv);
++    REGISTER_ENCDEC (HEVC_V4L2M2M,      hevc_v4l2m2m);
+     REGISTER_DECODER(HNM4_VIDEO,        hnm4_video);
+     REGISTER_DECODER(HQ_HQA,            hq_hqa);
+     REGISTER_DECODER(HQX,               hqx);
+@@ -245,6 +248,7 @@ static void register_all(void)
+     REGISTER_ENCDEC (MPEG2VIDEO,        mpeg2video);
+     REGISTER_ENCDEC (MPEG4,             mpeg4);
+     REGISTER_DECODER(MPEG4_CRYSTALHD,   mpeg4_crystalhd);
++    REGISTER_ENCDEC (MPEG4_V4L2M2M,     mpeg4_v4l2m2m);
+     REGISTER_DECODER(MPEG4_MMAL,        mpeg4_mmal);
+ #if FF_API_VDPAU
+     REGISTER_DECODER(MPEG4_VDPAU,       mpeg4_vdpau);
+@@ -254,8 +258,10 @@ static void register_all(void)
+     REGISTER_DECODER(MPEG_VDPAU,        mpeg_vdpau);
+     REGISTER_DECODER(MPEG1_VDPAU,       mpeg1_vdpau);
+ #endif
++    REGISTER_DECODER(MPEG1_V4L2M2M,     mpeg1_v4l2m2m);
+     REGISTER_DECODER(MPEG2_MMAL,        mpeg2_mmal);
+     REGISTER_DECODER(MPEG2_CRYSTALHD,   mpeg2_crystalhd);
++    REGISTER_DECODER(MPEG2_V4L2M2M,     mpeg2_v4l2m2m);
+     REGISTER_DECODER(MPEG2_QSV,         mpeg2_qsv);
+     REGISTER_DECODER(MSA1,              msa1);
+     REGISTER_DECODER(MSMPEG4V1,         msmpeg4v1);
+@@ -350,6 +356,7 @@ static void register_all(void)
+     REGISTER_DECODER(VC1IMAGE,          vc1image);
+     REGISTER_DECODER(VC1_MMAL,          vc1_mmal);
+     REGISTER_DECODER(VC1_QSV,           vc1_qsv);
++    REGISTER_DECODER(VC1_V4L2M2M,       vc1_v4l2m2m);
+     REGISTER_ENCODER(VC2,               vc2);
+     REGISTER_DECODER(VCR1,              vcr1);
+     REGISTER_DECODER(VMDVIDEO,          vmdvideo);
+@@ -361,7 +368,9 @@ static void register_all(void)
+     REGISTER_DECODER(VP6F,              vp6f);
+     REGISTER_DECODER(VP7,               vp7);
+     REGISTER_DECODER(VP8,               vp8);
++    REGISTER_ENCDEC (VP8_V4L2M2M,       vp8_v4l2m2m);
+     REGISTER_DECODER(VP9,               vp9);
++    REGISTER_DECODER(VP9_V4L2M2M,       vp9_v4l2m2m);
+     REGISTER_DECODER(VQA,               vqa);
+     REGISTER_DECODER(WEBP,              webp);
+     REGISTER_ENCODER(WRAPPED_AVFRAME,   wrapped_avframe);
+diff --git a/libavcodec/v4l2_buffers.c b/libavcodec/v4l2_buffers.c
+new file mode 100644
+index 0000000000..ef7d040032
+--- /dev/null
++++ b/libavcodec/v4l2_buffers.c
+@@ -0,0 +1,453 @@
++/*
++ * V4L2 buffer helper functions.
++ *
++ * Copyright (C) 2017 Alexis Ballier <aballier@gentoo.org>
++ * Copyright (C) 2017 Jorge Ramirez <jorge.ramirez-ortiz@linaro.org>
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#include <linux/videodev2.h>
++#include <sys/ioctl.h>
++#include <sys/mman.h>
++#include <unistd.h>
++#include <fcntl.h>
++#include <poll.h>
++#include "libavcodec/avcodec.h"
++#include "libavcodec/internal.h"
++#include "v4l2_context.h"
++#include "v4l2_buffers.h"
++#include "v4l2_m2m.h"
++
++#define USEC_PER_SEC 1000000
++
++static inline V4L2m2mContext *buf_to_m2mctx(V4L2Buffer *buf)
++{
++    return V4L2_TYPE_IS_OUTPUT(buf->context->type) ?
++        container_of(buf->context, V4L2m2mContext, output) :
++        container_of(buf->context, V4L2m2mContext, capture);
++}
++
++static inline AVCodecContext *logger(V4L2Buffer *buf)
++{
++    return buf_to_m2mctx(buf)->avctx;
++}
++
++static inline void v4l2_set_pts(V4L2Buffer *out, int64_t pts)
++{
++    V4L2m2mContext *s = buf_to_m2mctx(out);
++    AVRational v4l2_timebase = { 1, USEC_PER_SEC };
++    int64_t v4l2_pts;
++
++    if (pts == AV_NOPTS_VALUE)
++        pts = 0;
++
++    /* convert pts to v4l2 timebase */
++    v4l2_pts = av_rescale_q(pts, s->avctx->time_base, v4l2_timebase);
++    out->buf.timestamp.tv_usec = v4l2_pts % USEC_PER_SEC;
++    out->buf.timestamp.tv_sec = v4l2_pts / USEC_PER_SEC;
++}
++
++static inline uint64_t v4l2_get_pts(V4L2Buffer *avbuf)
++{
++    V4L2m2mContext *s = buf_to_m2mctx(avbuf);
++    AVRational v4l2_timebase = { 1, USEC_PER_SEC };
++    int64_t v4l2_pts;
++
++    /* convert pts back to encoder timebase */
++    v4l2_pts = avbuf->buf.timestamp.tv_sec * USEC_PER_SEC + avbuf->buf.timestamp.tv_usec;
++
++    return av_rescale_q(v4l2_pts, v4l2_timebase, s->avctx->time_base);
++}
++
++static enum AVColorPrimaries v4l2_get_color_primaries(V4L2Buffer *buf)
++{
++    enum v4l2_ycbcr_encoding ycbcr;
++    enum v4l2_colorspace cs;
++
++    cs = V4L2_TYPE_IS_MULTIPLANAR(buf->buf.type) ?
++        buf->context->format.fmt.pix_mp.colorspace :
++        buf->context->format.fmt.pix.colorspace;
++
++    ycbcr = V4L2_TYPE_IS_MULTIPLANAR(buf->buf.type) ?
++        buf->context->format.fmt.pix_mp.ycbcr_enc:
++        buf->context->format.fmt.pix.ycbcr_enc;
++
++    switch(ycbcr) {
++    case V4L2_YCBCR_ENC_XV709:
++    case V4L2_YCBCR_ENC_709: return AVCOL_PRI_BT709;
++    case V4L2_YCBCR_ENC_XV601:
++    case V4L2_YCBCR_ENC_601:return AVCOL_PRI_BT470M;
++    default:
++        break;
++    }
++
++    switch(cs) {
++    case V4L2_COLORSPACE_470_SYSTEM_BG: return AVCOL_PRI_BT470BG;
++    case V4L2_COLORSPACE_SMPTE170M: return AVCOL_PRI_SMPTE170M;
++    case V4L2_COLORSPACE_SMPTE240M: return AVCOL_PRI_SMPTE240M;
++    case V4L2_COLORSPACE_BT2020: return AVCOL_PRI_BT2020;
++    default:
++        break;
++    }
++
++    return AVCOL_PRI_UNSPECIFIED;
++}
++
++static enum AVColorRange v4l2_get_color_range(V4L2Buffer *buf)
++{
++    enum v4l2_quantization qt;
++
++    qt = V4L2_TYPE_IS_MULTIPLANAR(buf->buf.type) ?
++        buf->context->format.fmt.pix_mp.quantization :
++        buf->context->format.fmt.pix.quantization;
++
++    switch (qt) {
++    case V4L2_QUANTIZATION_LIM_RANGE: return AVCOL_RANGE_MPEG;
++    case V4L2_QUANTIZATION_FULL_RANGE: return AVCOL_RANGE_JPEG;
++    default:
++        break;
++    }
++
++     return AVCOL_RANGE_UNSPECIFIED;
++}
++
++static enum AVColorSpace v4l2_get_color_space(V4L2Buffer *buf)
++{
++    enum v4l2_ycbcr_encoding ycbcr;
++    enum v4l2_colorspace cs;
++
++    cs = V4L2_TYPE_IS_MULTIPLANAR(buf->buf.type) ?
++        buf->context->format.fmt.pix_mp.colorspace :
++        buf->context->format.fmt.pix.colorspace;
++
++    ycbcr = V4L2_TYPE_IS_MULTIPLANAR(buf->buf.type) ?
++        buf->context->format.fmt.pix_mp.ycbcr_enc:
++        buf->context->format.fmt.pix.ycbcr_enc;
++
++    switch(cs) {
++    case V4L2_COLORSPACE_SRGB: return AVCOL_SPC_RGB;
++    case V4L2_COLORSPACE_REC709: return AVCOL_SPC_BT709;
++    case V4L2_COLORSPACE_470_SYSTEM_M: return AVCOL_SPC_FCC;
++    case V4L2_COLORSPACE_470_SYSTEM_BG: return AVCOL_SPC_BT470BG;
++    case V4L2_COLORSPACE_SMPTE170M: return AVCOL_SPC_SMPTE170M;
++    case V4L2_COLORSPACE_SMPTE240M: return AVCOL_SPC_SMPTE240M;
++    case V4L2_COLORSPACE_BT2020:
++        if (ycbcr == V4L2_YCBCR_ENC_BT2020_CONST_LUM)
++            return AVCOL_SPC_BT2020_CL;
++        else
++             return AVCOL_SPC_BT2020_NCL;
++    default:
++        break;
++    }
++
++    return AVCOL_SPC_UNSPECIFIED;
++}
++
++static enum AVColorTransferCharacteristic v4l2_get_color_trc(V4L2Buffer *buf)
++{
++    enum v4l2_ycbcr_encoding ycbcr;
++    enum v4l2_xfer_func xfer;
++    enum v4l2_colorspace cs;
++
++    cs = V4L2_TYPE_IS_MULTIPLANAR(buf->buf.type) ?
++        buf->context->format.fmt.pix_mp.colorspace :
++        buf->context->format.fmt.pix.colorspace;
++
++    ycbcr = V4L2_TYPE_IS_MULTIPLANAR(buf->buf.type) ?
++        buf->context->format.fmt.pix_mp.ycbcr_enc:
++        buf->context->format.fmt.pix.ycbcr_enc;
++
++    xfer = V4L2_TYPE_IS_MULTIPLANAR(buf->buf.type) ?
++        buf->context->format.fmt.pix_mp.xfer_func:
++        buf->context->format.fmt.pix.xfer_func;
++
++    switch (xfer) {
++    case V4L2_XFER_FUNC_709: return AVCOL_TRC_BT709;
++    case V4L2_XFER_FUNC_SRGB: return AVCOL_TRC_IEC61966_2_1;
++    default:
++        break;
++    }
++
++    switch (cs) {
++    case V4L2_COLORSPACE_470_SYSTEM_M: return AVCOL_TRC_GAMMA22;
++    case V4L2_COLORSPACE_470_SYSTEM_BG: return AVCOL_TRC_GAMMA28;
++    case V4L2_COLORSPACE_SMPTE170M: return AVCOL_TRC_SMPTE170M;
++    case V4L2_COLORSPACE_SMPTE240M: return AVCOL_TRC_SMPTE240M;
++    default:
++        break;
++    }
++
++    switch (ycbcr) {
++    case V4L2_YCBCR_ENC_XV709:
++    case V4L2_YCBCR_ENC_XV601: return AVCOL_TRC_BT1361_ECG;
++    default:
++        break;
++    }
++
++    return AVCOL_TRC_UNSPECIFIED;
++}
++
++static void v4l2_free_buffer(void *opaque, uint8_t *unused)
++{
++    V4L2Buffer* avbuf = opaque;
++    V4L2m2mContext *s = buf_to_m2mctx(avbuf);
++
++    atomic_fetch_sub_explicit(&s->refcount, 1, memory_order_acq_rel);
++    if (s->reinit) {
++        if (!atomic_load(&s->refcount))
++            sem_post(&s->refsync);
++        return;
++    }
++
++    if (avbuf->context->streamon) {
++        ff_v4l2_buffer_enqueue(avbuf);
++        return;
++    }
++
++    if (!atomic_load(&s->refcount))
++        ff_v4l2_m2m_codec_end(s->avctx);
++}
++
++static int v4l2_buf_to_bufref(V4L2Buffer *in, int plane, AVBufferRef **buf)
++{
++    V4L2m2mContext *s = buf_to_m2mctx(in);
++
++    if (plane >= in->num_planes)
++        return AVERROR(EINVAL);
++
++    /* even though most encoders return 0 in data_offset encoding vp8 does require this value */
++    *buf = av_buffer_create((char *)in->plane_info[plane].mm_addr + in->planes[plane].data_offset,
++                            in->plane_info[plane].length, v4l2_free_buffer, in, 0);
++    if (!*buf)
++        return AVERROR(ENOMEM);
++
++    in->status = V4L2BUF_RET_USER;
++    atomic_fetch_add_explicit(&s->refcount, 1, memory_order_relaxed);
++
++    return 0;
++}
++
++static int v4l2_bufref_to_buf(V4L2Buffer *out, int plane, const uint8_t* data, int size, AVBufferRef* bref)
++{
++    if (plane >= out->num_planes)
++        return AVERROR(EINVAL);
++
++    memcpy(out->plane_info[plane].mm_addr, data, FFMIN(size, out->plane_info[plane].length));
++
++    out->planes[plane].bytesused = FFMIN(size, out->plane_info[plane].length);
++    out->planes[plane].length = out->plane_info[plane].length;
++
++    return 0;
++}
++
++/******************************************************************************
++ *
++ *              V4L2uffer interface
++ *
++ ******************************************************************************/
++
++int ff_v4l2_buffer_avframe_to_buf(const AVFrame *frame, V4L2Buffer* out)
++{
++    int i, ret;
++
++    for(i = 0; i < out->num_planes; i++) {
++        ret = v4l2_bufref_to_buf(out, i, frame->buf[i]->data, frame->buf[i]->size, frame->buf[i]);
++        if (ret)
++            return ret;
++    }
++
++    v4l2_set_pts(out, frame->pts);
++
++    return 0;
++}
++
++int ff_v4l2_buffer_buf_to_avframe(AVFrame *frame, V4L2Buffer *avbuf)
++{
++    V4L2m2mContext *s = buf_to_m2mctx(avbuf);
++    int i, ret;
++
++    av_frame_unref(frame);
++
++    /* 1. get references to the actual data */
++    for (i = 0; i < avbuf->num_planes; i++) {
++        ret = v4l2_buf_to_bufref(avbuf, i, &frame->buf[i]);
++        if (ret)
++            return ret;
++
++        frame->linesize[i] = avbuf->plane_info[i].bytesperline;
++        frame->data[i] = frame->buf[i]->data;
++    }
++
++    /* 1.1 fixup special cases */
++    switch (avbuf->context->av_pix_fmt) {
++    case AV_PIX_FMT_NV12:
++        if (avbuf->num_planes > 1)
++            break;
++        frame->linesize[1] = avbuf->plane_info[0].bytesperline;
++        frame->data[1] = frame->buf[0]->data + avbuf->plane_info[0].bytesperline * avbuf->context->format.fmt.pix_mp.height;
++        break;
++    default:
++        break;
++    }
++
++    /* 2. get frame information */
++    frame->key_frame = !!(avbuf->buf.flags & V4L2_BUF_FLAG_KEYFRAME);
++    frame->format = avbuf->context->av_pix_fmt;
++    frame->color_primaries = v4l2_get_color_primaries(avbuf);
++    frame->colorspace = v4l2_get_color_space(avbuf);
++    frame->color_range = v4l2_get_color_range(avbuf);
++    frame->color_trc = v4l2_get_color_trc(avbuf);
++    frame->pts = v4l2_get_pts(avbuf);
++
++    /* these two values are updated also during re-init in v4l2_process_driver_event */
++    frame->height = s->output.height;
++    frame->width = s->output.width;
++
++    /* 3. report errors upstream */
++    if (avbuf->buf.flags & V4L2_BUF_FLAG_ERROR) {
++        av_log(logger(avbuf), AV_LOG_ERROR, "%s: driver decode error\n", avbuf->context->name);
++        frame->decode_error_flags |= FF_DECODE_ERROR_INVALID_BITSTREAM;
++    }
++
++    return 0;
++}
++
++int ff_v4l2_buffer_buf_to_avpkt(AVPacket *pkt, V4L2Buffer *avbuf)
++{
++    int ret;
++
++    av_packet_unref(pkt);
++    ret = v4l2_buf_to_bufref(avbuf, 0, &pkt->buf);
++    if (ret)
++        return ret;
++
++    pkt->size = V4L2_TYPE_IS_MULTIPLANAR(avbuf->buf.type) ? avbuf->buf.m.planes[0].bytesused : avbuf->buf.bytesused;
++    pkt->data = pkt->buf->data;
++
++    if (avbuf->buf.flags & V4L2_BUF_FLAG_KEYFRAME)
++        pkt->flags |= AV_PKT_FLAG_KEY;
++
++    if (avbuf->buf.flags & V4L2_BUF_FLAG_ERROR) {
++        av_log(logger(avbuf), AV_LOG_ERROR, "%s driver encode error\n", avbuf->context->name);
++        pkt->flags |= AV_PKT_FLAG_CORRUPT;
++    }
++
++    pkt->dts = pkt->pts = v4l2_get_pts(avbuf);
++
++    return 0;
++}
++
++int ff_v4l2_buffer_avpkt_to_buf(const AVPacket *pkt, V4L2Buffer *out)
++{
++    int ret;
++
++    ret = v4l2_bufref_to_buf(out, 0, pkt->data, pkt->size, pkt->buf);
++    if (ret)
++        return ret;
++
++    v4l2_set_pts(out, pkt->pts);
++
++    if (pkt->flags & AV_PKT_FLAG_KEY)
++        out->flags = V4L2_BUF_FLAG_KEYFRAME;
++
++    return 0;
++}
++
++int ff_v4l2_buffer_initialize(V4L2Buffer* avbuf, int index)
++{
++    V4L2Context *ctx = avbuf->context;
++    int ret, i;
++
++    avbuf->buf.memory = V4L2_MEMORY_MMAP;
++    avbuf->buf.type = ctx->type;
++    avbuf->buf.index = index;
++
++    if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type)) {
++        avbuf->buf.length = VIDEO_MAX_PLANES;
++        avbuf->buf.m.planes = avbuf->planes;
++    }
++
++    ret = ioctl(buf_to_m2mctx(avbuf)->fd, VIDIOC_QUERYBUF, &avbuf->buf);
++    if (ret < 0)
++        return AVERROR(errno);
++
++    if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type)) {
++        avbuf->num_planes = 0;
++        for (;;) {
++            /* in MP, the V4L2 API states that buf.length means num_planes */
++            if (avbuf->num_planes >= avbuf->buf.length)
++                break;
++            if (avbuf->buf.m.planes[avbuf->num_planes].length)
++                avbuf->num_planes++;
++        }
++    } else
++        avbuf->num_planes = 1;
++
++    for (i = 0; i < avbuf->num_planes; i++) {
++
++        avbuf->plane_info[i].bytesperline = V4L2_TYPE_IS_MULTIPLANAR(ctx->type) ?
++            ctx->format.fmt.pix_mp.plane_fmt[i].bytesperline :
++            ctx->format.fmt.pix.bytesperline;
++
++        if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type)) {
++            avbuf->plane_info[i].length = avbuf->buf.m.planes[i].length;
++            avbuf->plane_info[i].mm_addr = mmap(NULL, avbuf->buf.m.planes[i].length,
++                                           PROT_READ | PROT_WRITE, MAP_SHARED,
++                                           buf_to_m2mctx(avbuf)->fd, avbuf->buf.m.planes[i].m.mem_offset);
++        } else {
++            avbuf->plane_info[i].length = avbuf->buf.length;
++            avbuf->plane_info[i].mm_addr = mmap(NULL, avbuf->buf.length,
++                                          PROT_READ | PROT_WRITE, MAP_SHARED,
++                                          buf_to_m2mctx(avbuf)->fd, avbuf->buf.m.offset);
++        }
++
++        if (avbuf->plane_info[i].mm_addr == MAP_FAILED)
++            return AVERROR(ENOMEM);
++    }
++
++    avbuf->status = V4L2BUF_AVAILABLE;
++
++    if (V4L2_TYPE_IS_OUTPUT(ctx->type))
++        return 0;
++
++    if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type)) {
++        avbuf->buf.m.planes = avbuf->planes;
++        avbuf->buf.length   = avbuf->num_planes;
++
++    } else {
++        avbuf->buf.bytesused = avbuf->planes[0].bytesused;
++        avbuf->buf.length    = avbuf->planes[0].length;
++    }
++
++    return ff_v4l2_buffer_enqueue(avbuf);
++}
++
++int ff_v4l2_buffer_enqueue(V4L2Buffer* avbuf)
++{
++    int ret;
++
++    avbuf->buf.flags = avbuf->flags;
++
++    ret = ioctl(buf_to_m2mctx(avbuf)->fd, VIDIOC_QBUF, &avbuf->buf);
++    if (ret < 0)
++        return AVERROR(errno);
++
++    avbuf->status = V4L2BUF_IN_DRIVER;
++
++    return 0;
++}
+diff --git a/libavcodec/v4l2_buffers.h b/libavcodec/v4l2_buffers.h
+new file mode 100644
+index 0000000000..8901a0952f
+--- /dev/null
++++ b/libavcodec/v4l2_buffers.h
+@@ -0,0 +1,121 @@
++/*
++ * V4L2 buffer helper functions.
++ *
++ * Copyright (C) 2017 Alexis Ballier <aballier@gentoo.org>
++ * Copyright (C) 2017 Jorge Ramirez <jorge.ramirez-ortiz@linaro.org>
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#ifndef AVCODEC_V4L2_BUFFERS_H
++#define AVCODEC_V4L2_BUFFERS_H
++
++enum V4L2Buffer_status {
++    V4L2BUF_AVAILABLE,
++    V4L2BUF_IN_DRIVER,
++    V4L2BUF_RET_USER,
++};
++
++/**
++ * V4L2Buffer (wrapper for v4l2_buffer management)
++ */
++typedef struct V4L2Buffer {
++    /* each buffer needs to have a reference to its context */
++    struct V4L2Context *context;
++
++    /* keep track of the mmap address and mmap length */
++    struct V4L2Plane_info {
++        int bytesperline;
++        void * mm_addr;
++        size_t length;
++    } plane_info[VIDEO_MAX_PLANES];
++
++    int num_planes;
++
++    /* the v4l2_buffer buf.m.planes pointer uses the planes[] mem */
++    struct v4l2_buffer buf;
++    struct v4l2_plane planes[VIDEO_MAX_PLANES];
++
++    int flags;
++    enum V4L2Buffer_status status;
++
++} V4L2Buffer;
++
++/**
++ * Extracts the data from a V4L2Buffer to an AVFrame
++ *
++ * @param[in] frame The AVFRame to push the information to
++ * @param[in] buf The V4L2Buffer to get the information from
++ *
++ * @returns 0 in case of success, EINVAL if the number of planes is incorrect,
++ * ENOMEM if the AVBufferRef cant be created.
++ */
++int ff_v4l2_buffer_buf_to_avframe(AVFrame *frame, V4L2Buffer *buf);
++
++/**
++ * Extracts the data from a V4L2Buffer to an AVPacket
++ *
++ * @param[in] pkt The AVPacket to push the information to
++ * @param[in] buf The V4L2Buffer to get the information from
++ *
++ * @returns 0 in case of success, EINVAL if the number of planes is incorrect,
++ * ENOMEM if the AVBufferRef cant be created.
++ *
++ */
++int ff_v4l2_buffer_buf_to_avpkt(AVPacket *pkt, V4L2Buffer *buf);
++
++/**
++ * Extracts the data from an AVPacket to a V4L2Buffer
++ *
++ * @param[in]  frame AVPacket to get the data from
++ * @param[in]  avbuf V4L2Bfuffer to push the information to
++ *
++ * @returns 0 in case of success, negative otherwise
++ */
++int ff_v4l2_buffer_avpkt_to_buf(const AVPacket *pkt, V4L2Buffer *out);
++
++/**
++ * Extracts the data from an AVFrame to a V4L2Buffer
++ *
++ * @param[in]  frame AVFrame to get the data from
++ * @param[in]  avbuf V4L2Bfuffer to push the information to
++ *
++ * @returns 0 in case of success, negative otherwise
++ */
++int ff_v4l2_buffer_avframe_to_buf(const AVFrame *frame, V4L2Buffer* out);
++
++/**
++ * Initializes a V4L2Buffer
++ *
++ * @param[in]  avbuf V4L2Bfuffer to initialize
++ * @param[in]  index v4l2 buffer id
++ *
++ * @returns 0 in case of success, negative otherwise
++ */
++int ff_v4l2_buffer_initialize(V4L2Buffer* avbuf, int index);
++
++/**
++ * Enqueues a V4L2Buffer
++ *
++ * @param[in] avbuf V4L2Bfuffer to push to the driver
++ *
++ * @returns 0 in case of success, negative otherwise
++ */
++int ff_v4l2_buffer_enqueue(V4L2Buffer* avbuf);
++
++
++#endif // AVCODEC_V4L2_BUFFERS_H
+diff --git a/libavcodec/v4l2_context.c b/libavcodec/v4l2_context.c
+new file mode 100644
+index 0000000000..d675c55f2b
+--- /dev/null
++++ b/libavcodec/v4l2_context.c
+@@ -0,0 +1,667 @@
++/*
++ * V4L2 context helper functions.
++ *
++ * Copyright (C) 2017 Alexis Ballier <aballier@gentoo.org>
++ * Copyright (C) 2017 Jorge Ramirez <jorge.ramirez-ortiz@linaro.org>
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#include <linux/videodev2.h>
++#include <sys/ioctl.h>
++#include <sys/mman.h>
++#include <unistd.h>
++#include <fcntl.h>
++#include <poll.h>
++#include "libavcodec/avcodec.h"
++#include "libavcodec/internal.h"
++#include "v4l2_buffers.h"
++#include "v4l2_fmt.h"
++#include "v4l2_m2m.h"
++
++struct v4l2_format_update {
++    uint32_t v4l2_fmt;
++    int update_v4l2;
++
++    enum AVPixelFormat av_fmt;
++    int update_avfmt;
++};
++
++static inline V4L2m2mContext *ctx_to_m2mctx(V4L2Context *ctx)
++{
++    return V4L2_TYPE_IS_OUTPUT(ctx->type) ?
++        container_of(ctx, V4L2m2mContext, output) :
++        container_of(ctx, V4L2m2mContext, capture);
++}
++
++static inline AVCodecContext *logger(V4L2Context *ctx)
++{
++    return ctx_to_m2mctx(ctx)->avctx;
++}
++
++static inline unsigned int v4l2_get_width(struct v4l2_format *fmt)
++{
++    return V4L2_TYPE_IS_MULTIPLANAR(fmt->type) ? fmt->fmt.pix_mp.width : fmt->fmt.pix.width;
++}
++
++static inline unsigned int v4l2_get_height(struct v4l2_format *fmt)
++{
++    return V4L2_TYPE_IS_MULTIPLANAR(fmt->type) ? fmt->fmt.pix_mp.height : fmt->fmt.pix.height;
++}
++
++static inline unsigned int v4l2_resolution_changed(V4L2Context *ctx, struct v4l2_format *fmt2)
++{
++    struct v4l2_format *fmt1 = &ctx->format;
++    int ret =  V4L2_TYPE_IS_MULTIPLANAR(ctx->type) ?
++        fmt1->fmt.pix_mp.width != fmt2->fmt.pix_mp.width ||
++        fmt1->fmt.pix_mp.height != fmt2->fmt.pix_mp.height
++        :
++        fmt1->fmt.pix.width != fmt2->fmt.pix.width ||
++        fmt1->fmt.pix.height != fmt2->fmt.pix.height;
++
++    if (ret)
++        av_log(logger(ctx), AV_LOG_DEBUG, "%s changed (%dx%d) -> (%dx%d)\n",
++            ctx->name,
++            v4l2_get_width(fmt1), v4l2_get_height(fmt1),
++            v4l2_get_width(fmt2), v4l2_get_height(fmt2));
++
++    return ret;
++}
++
++static inline int v4l2_type_supported(V4L2Context *ctx)
++{
++    return ctx->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE ||
++        ctx->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE ||
++        ctx->type == V4L2_BUF_TYPE_VIDEO_CAPTURE ||
++        ctx->type == V4L2_BUF_TYPE_VIDEO_OUTPUT;
++}
++
++static inline void v4l2_save_to_context(V4L2Context* ctx, struct v4l2_format_update *fmt)
++{
++    ctx->format.type = ctx->type;
++
++    if (fmt->update_avfmt)
++        ctx->av_pix_fmt = fmt->av_fmt;
++
++    if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type)) {
++        /* update the sizes to handle the reconfiguration of the capture stream at runtime */
++        ctx->format.fmt.pix_mp.height = ctx->height;
++        ctx->format.fmt.pix_mp.width = ctx->width;
++        if (fmt->update_v4l2)
++            ctx->format.fmt.pix_mp.pixelformat = fmt->v4l2_fmt;
++    } else {
++        ctx->format.fmt.pix.height = ctx->height;
++        ctx->format.fmt.pix.width = ctx->width;
++        if (fmt->update_v4l2)
++            ctx->format.fmt.pix.pixelformat = fmt->v4l2_fmt;
++    }
++}
++
++/**
++ * returns 1 if reinit was succesful, negative if it failed
++ * returns 0 if reinit was not executed
++ */
++static int v4l2_handle_event(V4L2Context *ctx)
++{
++    V4L2m2mContext *s = ctx_to_m2mctx(ctx);
++    struct v4l2_format cap_fmt = s->capture.format;
++    struct v4l2_format out_fmt = s->output.format;
++    struct v4l2_event evt = { 0 };
++    int full_reinit, reinit, ret;
++
++    ret = ioctl(s->fd, VIDIOC_DQEVENT, &evt);
++    if (ret < 0) {
++        av_log(logger(ctx), AV_LOG_ERROR, "%s VIDIOC_DQEVENT\n", ctx->name);
++        return 0;
++    }
++
++    if (evt.type != V4L2_EVENT_SOURCE_CHANGE)
++        return 0;
++
++    ret = ioctl(s->fd, VIDIOC_G_FMT, &out_fmt);
++    if (ret) {
++        av_log(logger(ctx), AV_LOG_ERROR, "%s VIDIOC_G_FMT\n", s->output.name);
++        return 0;
++    }
++
++    ret = ioctl(s->fd, VIDIOC_G_FMT, &cap_fmt);
++    if (ret) {
++        av_log(logger(ctx), AV_LOG_ERROR, "%s VIDIOC_G_FMT\n", s->capture.name);
++        return 0;
++    }
++
++    full_reinit = v4l2_resolution_changed(&s->output, &out_fmt);
++    if (full_reinit) {
++        s->output.height = v4l2_get_height(&out_fmt);
++        s->output.width = v4l2_get_width(&out_fmt);
++    }
++
++    reinit = v4l2_resolution_changed(&s->capture, &cap_fmt);
++    if (reinit) {
++        s->capture.height = v4l2_get_height(&cap_fmt);
++        s->capture.width = v4l2_get_width(&cap_fmt);
++    }
++
++    if (full_reinit || reinit)
++        s->reinit = 1;
++
++    if (full_reinit) {
++        ret = ff_v4l2_m2m_codec_full_reinit(s);
++        if (ret) {
++            av_log(logger(ctx), AV_LOG_ERROR, "v4l2_m2m_codec_full_reinit\n");
++            return -EINVAL;
++        }
++        goto reinit_run;
++    }
++
++    if (reinit) {
++        ret = ff_set_dimensions(s->avctx, s->capture.width, s->capture.height);
++        if (ret < 0)
++            av_log(logger(ctx), AV_LOG_WARNING, "update avcodec height and width\n");
++
++        ret = ff_v4l2_m2m_codec_reinit(s);
++        if (ret) {
++            av_log(logger(ctx), AV_LOG_ERROR, "v4l2_m2m_codec_reinit\n");
++            return -EINVAL;
++        }
++        goto reinit_run;
++    }
++
++    /* dummy event received */
++    return 0;
++
++    /* reinit executed */
++reinit_run:
++    return 1;
++}
++
++static int v4l2_stop_decode(V4L2Context *ctx)
++{
++    struct v4l2_decoder_cmd cmd = {
++        .cmd = V4L2_DEC_CMD_STOP,
++    };
++    int ret;
++
++    ret = ioctl(ctx_to_m2mctx(ctx)->fd, VIDIOC_DECODER_CMD, &cmd);
++    if (ret) {
++        /* DECODER_CMD is optional */
++        if (errno == ENOTTY)
++            return ff_v4l2_context_set_status(ctx, VIDIOC_STREAMOFF);
++    }
++
++    return 0;
++}
++
++static int v4l2_stop_encode(V4L2Context *ctx)
++{
++    struct v4l2_encoder_cmd cmd = {
++        .cmd = V4L2_ENC_CMD_STOP,
++    };
++    int ret;
++
++    ret = ioctl(ctx_to_m2mctx(ctx)->fd, VIDIOC_ENCODER_CMD, &cmd);
++    if (ret) {
++        /* ENCODER_CMD is optional */
++        if (errno == ENOTTY)
++            return ff_v4l2_context_set_status(ctx, VIDIOC_STREAMOFF);
++    }
++
++    return 0;
++}
++
++static V4L2Buffer* v4l2_dequeue_v4l2buf(V4L2Context *ctx, int timeout)
++{
++    struct v4l2_plane planes[VIDEO_MAX_PLANES];
++    struct v4l2_buffer buf = { 0 };
++    V4L2Buffer* avbuf = NULL;
++    struct pollfd pfd = {
++        .events =  POLLIN | POLLRDNORM | POLLPRI | POLLOUT | POLLWRNORM, /* default blocking capture */
++        .fd = ctx_to_m2mctx(ctx)->fd,
++    };
++    int ret;
++
++    if (V4L2_TYPE_IS_OUTPUT(ctx->type))
++        pfd.events =  POLLOUT | POLLWRNORM;
++
++    for (;;) {
++        ret = poll(&pfd, 1, timeout);
++        if (ret > 0)
++            break;
++        if (errno == EINTR)
++            continue;
++
++        /* timeout is being used to indicate last valid bufer when draining */
++        if (ctx_to_m2mctx(ctx)->draining)
++            ctx->done = 1;
++
++        return NULL;
++    }
++
++    /* 0. handle errors */
++    if (pfd.revents & POLLERR) {
++        av_log(logger(ctx), AV_LOG_WARNING, "%s POLLERR\n", ctx->name);
++        return NULL;
++    }
++
++    /* 1. handle resolution changes */
++    if (pfd.revents & POLLPRI) {
++        ret = v4l2_handle_event(ctx);
++        if (ret < 0) {
++            /* if re-init failed, abort */
++            ctx->done = EINVAL;
++            return NULL;
++        }
++        if (ret) {
++            /* if re-init was successfull drop the buffer (if there was one)
++             * since we had to reconfigure capture (unmap all buffers)
++             */
++            return NULL;
++        }
++    }
++
++    /* 2. dequeue the buffer */
++    if (pfd.revents & (POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM)) {
++
++        if (!V4L2_TYPE_IS_OUTPUT(ctx->type)) {
++            /* there is a capture buffer ready */
++            if (pfd.revents & (POLLIN | POLLRDNORM))
++                goto dequeue;
++
++            /* the driver is ready to accept more input; instead of waiting for the capture
++             * buffer to complete we return NULL so input can proceed (we are single threaded)
++             */
++            if (pfd.revents & (POLLOUT | POLLWRNORM))
++                return NULL;
++        }
++
++dequeue:
++        memset(&buf, 0, sizeof(buf));
++        buf.memory = V4L2_MEMORY_MMAP;
++        buf.type = ctx->type;
++        if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type)) {
++            memset(planes, 0, sizeof(planes));
++            buf.length = VIDEO_MAX_PLANES;
++            buf.m.planes = planes;
++        }
++
++        ret = ioctl(ctx_to_m2mctx(ctx)->fd, VIDIOC_DQBUF, &buf);
++        if (ret) {
++            if (errno != EAGAIN) {
++                ctx->done = errno;
++                if (errno != EPIPE)
++                    av_log(logger(ctx), AV_LOG_DEBUG, "%s VIDIOC_DQBUF, errno (%s)\n",
++                        ctx->name, av_err2str(AVERROR(errno)));
++            }
++        } else {
++            avbuf = &ctx->buffers[buf.index];
++            avbuf->status = V4L2BUF_AVAILABLE;
++            avbuf->buf = buf;
++            if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type)) {
++                memcpy(avbuf->planes, planes, sizeof(planes));
++                avbuf->buf.m.planes = avbuf->planes;
++            }
++        }
++    }
++
++    return avbuf;
++}
++
++static V4L2Buffer* v4l2_getfree_v4l2buf(V4L2Context *ctx)
++{
++    int timeout = 0; /* return when no more buffers to dequeue */
++    int i;
++
++    /* get back as many output buffers as possible */
++    if (V4L2_TYPE_IS_OUTPUT(ctx->type)) {
++          do {
++          } while (v4l2_dequeue_v4l2buf(ctx, timeout));
++    }
++
++    for (i = 0; i < ctx->num_buffers; i++) {
++        if (ctx->buffers[i].status == V4L2BUF_AVAILABLE)
++            return &ctx->buffers[i];
++    }
++
++    return NULL;
++}
++
++static int v4l2_release_buffers(V4L2Context* ctx)
++{
++    struct v4l2_requestbuffers req = {
++        .memory = V4L2_MEMORY_MMAP,
++        .type = ctx->type,
++        .count = 0, /* 0 -> unmaps buffers from the driver */
++    };
++    int i, j;
++
++    for (i = 0; i < ctx->num_buffers; i++) {
++        V4L2Buffer *buffer = &ctx->buffers[i];
++
++        for (j = 0; j < buffer->num_planes; j++) {
++            struct V4L2Plane_info *p = &buffer->plane_info[j];
++            if (p->mm_addr && p->length)
++                if (munmap(p->mm_addr, p->length) < 0)
++                    av_log(logger(ctx), AV_LOG_ERROR, "%s unmap plane (%s))\n", ctx->name, av_err2str(AVERROR(errno)));
++        }
++    }
++
++    return ioctl(ctx_to_m2mctx(ctx)->fd, VIDIOC_REQBUFS, &req);
++}
++
++static inline int v4l2_try_raw_format(V4L2Context* ctx, enum AVPixelFormat pixfmt)
++{
++    struct v4l2_format *fmt = &ctx->format;
++    uint32_t v4l2_fmt;
++    int ret;
++
++    v4l2_fmt = ff_v4l2_format_avfmt_to_v4l2(pixfmt);
++    if (!v4l2_fmt)
++        return AVERROR(EINVAL);
++
++    if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type))
++        fmt->fmt.pix_mp.pixelformat = v4l2_fmt;
++    else
++        fmt->fmt.pix.pixelformat = v4l2_fmt;
++
++    fmt->type = ctx->type;
++
++    ret = ioctl(ctx_to_m2mctx(ctx)->fd, VIDIOC_TRY_FMT, fmt);
++    if (ret)
++        return AVERROR(EINVAL);
++
++    return 0;
++}
++
++static int v4l2_get_raw_format(V4L2Context* ctx, enum AVPixelFormat *p)
++{
++    enum AVPixelFormat pixfmt = ctx->av_pix_fmt;
++    struct v4l2_fmtdesc fdesc;
++    int ret;
++
++    memset(&fdesc, 0, sizeof(fdesc));
++    fdesc.type = ctx->type;
++
++    if (pixfmt != AV_PIX_FMT_NONE) {
++        ret = v4l2_try_raw_format(ctx, pixfmt);
++        if (ret)
++            pixfmt = AV_PIX_FMT_NONE;
++        else
++            return 0;
++    }
++
++    for (;;) {
++        ret = ioctl(ctx_to_m2mctx(ctx)->fd, VIDIOC_ENUM_FMT, &fdesc);
++        if (ret)
++            return AVERROR(EINVAL);
++
++        pixfmt = ff_v4l2_format_v4l2_to_avfmt(fdesc.pixelformat, AV_CODEC_ID_RAWVIDEO);
++        ret = v4l2_try_raw_format(ctx, pixfmt);
++        if (ret){
++            fdesc.index++;
++            continue;
++        }
++
++        *p = pixfmt;
++
++        return 0;
++    }
++
++    return AVERROR(EINVAL);
++}
++
++static int v4l2_get_coded_format(V4L2Context* ctx, uint32_t *p)
++{
++    struct v4l2_fmtdesc fdesc;
++    uint32_t v4l2_fmt;
++    int ret;
++
++    /* translate to a valid v4l2 format */
++    v4l2_fmt = ff_v4l2_format_avcodec_to_v4l2(ctx->av_codec_id);
++    if (!v4l2_fmt)
++        return AVERROR(EINVAL);
++
++    /* check if the driver supports this format */
++    memset(&fdesc, 0, sizeof(fdesc));
++    fdesc.type = ctx->type;
++
++    for (;;) {
++        ret = ioctl(ctx_to_m2mctx(ctx)->fd, VIDIOC_ENUM_FMT, &fdesc);
++        if (ret)
++            return AVERROR(EINVAL);
++
++        if (fdesc.pixelformat == v4l2_fmt)
++            break;
++
++        fdesc.index++;
++    }
++
++    *p = v4l2_fmt;
++
++    return 0;
++}
++
++ /*****************************************************************************
++  *
++  *             V4L2 Context Interface
++  *
++  *****************************************************************************/
++
++int ff_v4l2_context_set_status(V4L2Context* ctx, int cmd)
++{
++    int type = ctx->type;
++    int ret;
++
++    ret = ioctl(ctx_to_m2mctx(ctx)->fd, cmd, &type);
++    if (ret < 0)
++        return AVERROR(errno);
++
++    ctx->streamon = (cmd == VIDIOC_STREAMON);
++
++    return 0;
++}
++
++int ff_v4l2_context_enqueue_frame(V4L2Context* ctx, const AVFrame* frame)
++{
++    V4L2m2mContext *s = ctx_to_m2mctx(ctx);
++    V4L2Buffer* avbuf;
++    int ret;
++
++    if (!frame) {
++        ret = v4l2_stop_encode(ctx);
++        if (ret)
++            av_log(logger(ctx), AV_LOG_ERROR, "%s stop_encode\n", ctx->name);
++        s->draining= 1;
++        return 0;
++    }
++
++    avbuf = v4l2_getfree_v4l2buf(ctx);
++    if (!avbuf)
++        return AVERROR(ENOMEM);
++
++    ret = ff_v4l2_buffer_avframe_to_buf(frame, avbuf);
++    if (ret)
++        return ret;
++
++    return ff_v4l2_buffer_enqueue(avbuf);
++}
++
++int ff_v4l2_context_enqueue_packet(V4L2Context* ctx, const AVPacket* pkt)
++{
++    V4L2m2mContext *s = ctx_to_m2mctx(ctx);
++    V4L2Buffer* avbuf;
++    int ret;
++
++    if (!pkt->size) {
++        ret = v4l2_stop_decode(ctx);
++        if (ret)
++            av_log(logger(ctx), AV_LOG_ERROR, "%s stop_decode\n", ctx->name);
++        s->draining = 1;
++        return 0;
++    }
++
++    avbuf = v4l2_getfree_v4l2buf(ctx);
++    if (!avbuf)
++        return AVERROR(ENOMEM);
++
++    ret = ff_v4l2_buffer_avpkt_to_buf(pkt, avbuf);
++    if (ret)
++        return ret;
++
++    return ff_v4l2_buffer_enqueue(avbuf);
++}
++
++int ff_v4l2_context_dequeue_frame(V4L2Context* ctx, AVFrame* frame)
++{
++    V4L2Buffer* avbuf = NULL;
++
++    /* if we are draining, we are no longer inputing data, therefore enable a
++     * timeout so we can dequeue and flag the last valid buffer.
++     *
++     * blocks until:
++     *  1. decoded frame available
++     *  2. an input buffer is ready to be dequeued
++     */
++    avbuf = v4l2_dequeue_v4l2buf(ctx, ctx_to_m2mctx(ctx)->draining ? 200 : -1);
++    if (!avbuf) {
++        if (ctx->done)
++            return AVERROR_EOF;
++
++        return AVERROR(EAGAIN);
++    }
++
++    return ff_v4l2_buffer_buf_to_avframe(frame, avbuf);
++}
++
++int ff_v4l2_context_dequeue_packet(V4L2Context* ctx, AVPacket* pkt)
++{
++    V4L2Buffer* avbuf = NULL;
++
++    /* if we are draining, we are no longer inputing data, therefore enable a
++     * timeout so we can dequeue and flag the last valid buffer.
++     *
++     * blocks until:
++     *  1. encoded packet available
++     *  2. an input buffer ready to be dequeued
++     */
++    avbuf = v4l2_dequeue_v4l2buf(ctx, ctx_to_m2mctx(ctx)->draining ? 200 : -1);
++    if (!avbuf) {
++        if (ctx->done)
++            return AVERROR_EOF;
++
++        return AVERROR(EAGAIN);
++    }
++
++    return ff_v4l2_buffer_buf_to_avpkt(pkt, avbuf);
++}
++
++int ff_v4l2_context_get_format(V4L2Context* ctx)
++{
++    struct v4l2_format_update fmt = { 0 };
++    int ret;
++
++    if  (ctx->av_codec_id == AV_CODEC_ID_RAWVIDEO) {
++        ret = v4l2_get_raw_format(ctx, &fmt.av_fmt);
++        if (ret)
++            return ret;
++
++        fmt.update_avfmt = 1;
++        v4l2_save_to_context(ctx, &fmt);
++
++        /* format has been tried already */
++        return ret;
++    }
++
++    ret = v4l2_get_coded_format(ctx, &fmt.v4l2_fmt);
++    if (ret)
++        return ret;
++
++    fmt.update_v4l2 = 1;
++    v4l2_save_to_context(ctx, &fmt);
++
++    return ioctl(ctx_to_m2mctx(ctx)->fd, VIDIOC_TRY_FMT, &ctx->format);
++}
++
++int ff_v4l2_context_set_format(V4L2Context* ctx)
++{
++    return ioctl(ctx_to_m2mctx(ctx)->fd, VIDIOC_S_FMT, &ctx->format);
++}
++
++void ff_v4l2_context_release(V4L2Context* ctx)
++{
++    int ret;
++
++    if (!ctx->buffers)
++        return;
++
++    ret = v4l2_release_buffers(ctx);
++    if (ret)
++        av_log(logger(ctx), AV_LOG_WARNING, "V4L2 failed to unmap the %s buffers\n", ctx->name);
++
++    av_free(ctx->buffers);
++    ctx->buffers = NULL;
++}
++
++int ff_v4l2_context_init(V4L2Context* ctx)
++{
++    V4L2m2mContext *s = ctx_to_m2mctx(ctx);
++    struct v4l2_requestbuffers req;
++    int ret, i;
++
++    if (!v4l2_type_supported(ctx)) {
++        av_log(logger(ctx), AV_LOG_ERROR, "type %i not supported\n", ctx->type);
++        return AVERROR_PATCHWELCOME;
++    }
++
++    ret = ioctl(s->fd, VIDIOC_G_FMT, &ctx->format);
++    if (ret)
++        av_log(logger(ctx), AV_LOG_ERROR, "%s VIDIOC_G_FMT failed\n", ctx->name);
++
++    memset(&req, 0, sizeof(req));
++    req.count = ctx->num_buffers;
++    req.memory = V4L2_MEMORY_MMAP;
++    req.type = ctx->type;
++    ret = ioctl(s->fd, VIDIOC_REQBUFS, &req);
++    if (ret < 0)
++        return AVERROR(errno);
++
++    ctx->num_buffers = req.count;
++    ctx->buffers = av_mallocz(ctx->num_buffers * sizeof(V4L2Buffer));
++    if (!ctx->buffers) {
++            av_log(logger(ctx), AV_LOG_ERROR, "%s malloc enomem\n", ctx->name);
++            return AVERROR(ENOMEM);
++    }
++
++    for (i = 0; i < req.count; i++) {
++        ctx->buffers[i].context = ctx;
++        ret = ff_v4l2_buffer_initialize(&ctx->buffers[i], i);
++        if (ret < 0) {
++            av_log(logger(ctx), AV_LOG_ERROR, "%s buffer initialization (%s)\n", ctx->name, av_err2str(ret));
++            av_free(ctx->buffers);
++            return ret;
++        }
++    }
++
++    av_log(logger(ctx), AV_LOG_DEBUG, "%s: %s %02d buffers initialized: %04ux%04u, sizeimage %08u, bytesperline %08u\n", ctx->name,
++        V4L2_TYPE_IS_MULTIPLANAR(ctx->type) ? av_fourcc2str(ctx->format.fmt.pix_mp.pixelformat) : av_fourcc2str(ctx->format.fmt.pix.pixelformat),
++        req.count,
++        v4l2_get_width(&ctx->format),
++        v4l2_get_height(&ctx->format),
++        V4L2_TYPE_IS_MULTIPLANAR(ctx->type) ? ctx->format.fmt.pix_mp.plane_fmt[0].sizeimage : ctx->format.fmt.pix.sizeimage,
++        V4L2_TYPE_IS_MULTIPLANAR(ctx->type) ? ctx->format.fmt.pix_mp.plane_fmt[0].bytesperline : ctx->format.fmt.pix.bytesperline);
++
++    return 0;
++}
+diff --git a/libavcodec/v4l2_context.h b/libavcodec/v4l2_context.h
+new file mode 100644
+index 0000000000..b6667a04e3
+--- /dev/null
++++ b/libavcodec/v4l2_context.h
+@@ -0,0 +1,181 @@
++/*
++ * V4L2 context helper functions.
++ *
++ * Copyright (C) 2017 Alexis Ballier <aballier@gentoo.org>
++ * Copyright (C) 2017 Jorge Ramirez <jorge.ramirez-ortiz@linaro.org>
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#ifndef AVCODEC_V4L2_CONTEXT_H
++#define AVCODEC_V4L2_CONTEXT_H
++
++#include <stdatomic.h>
++#include "libavcodec/avcodec.h"
++#include "libavutil/pixfmt.h"
++#include "libavutil/frame.h"
++#include "libavutil/buffer.h"
++#include "v4l2_buffers.h"
++
++typedef struct V4L2Context {
++    /**
++     * context name.
++     */
++    const char* name;
++
++    /**
++     * Type of this buffer context.
++     * See V4L2_BUF_TYPE_VIDEO_* in videodev2.h
++     * Readonly after init.
++     */
++    enum v4l2_buf_type type;
++
++    /**
++     * AVPixelFormat corresponding to this buffer context.
++     * AV_PIX_FMT_NONE means this is an encoded stream.
++     */
++    enum AVPixelFormat av_pix_fmt;
++
++    /**
++     * AVCodecID corresponding to this buffer context.
++     * AV_CODEC_ID_RAWVIDEO means this is a raw stream and av_pix_fmt must be set to a valid value.
++     */
++    enum AVCodecID av_codec_id;
++
++    /**
++     * Format returned by the driver after initializing the buffer context.
++     * Readonly after init.
++     */
++    struct v4l2_format format;
++
++    /**
++     * Width and height of the frames it produces (in case of a capture context, e.g. when decoding)
++     * or accepts (in case of an output context, e.g. when encoding).
++     */
++    int width, height;
++
++    /**
++     * Indexed array of V4L2Buffers
++     */
++    V4L2Buffer *buffers;
++
++    /**
++     * Readonly after init.
++     */
++    int num_buffers;
++
++    /**
++     * Whether the stream has been started (VIDIOC_STREAMON has been sent).
++     */
++    int streamon;
++
++    /**
++     *  Either no more buffers available or an unrecoverable error was notified
++     *  by the V4L2 kernel driver: once set the context has to be exited.
++     */
++    int done;
++
++} V4L2Context;
++
++/**
++ * Initializes a V4L2Context.
++ *
++ * @param[in] ctx A pointer to a V4L2Context. See V4L2Context description for required variables.
++ * @return 0 in case of success, a negative value representing the error otherwise.
++ */
++int ff_v4l2_context_init(V4L2Context* ctx);
++
++/**
++ * Sets the V4L2Context format in the v4l2 driver.
++ *
++ * @param[in] ctx A pointer to a V4L2Context. See V4L2Context description for required variables.
++ * @return 0 in case of success, a negative value representing the error otherwise.
++ */
++int ff_v4l2_context_set_format(V4L2Context* ctx);
++
++/**
++ * Queries the driver for a valid v4l2 format and copies it to the context.
++ *
++ * @param[in] ctx A pointer to a V4L2Context. See V4L2Context description for required variables.
++ * @return 0 in case of success, a negative value representing the error otherwise.
++ */
++int ff_v4l2_context_get_format(V4L2Context* ctx);
++
++/**
++ * Releases a V4L2Context.
++ *
++ * @param[in] ctx A pointer to a V4L2Context.
++ *               The caller is reponsible for freeing it.
++ *               It must not be used after calling this function.
++ */
++void ff_v4l2_context_release(V4L2Context* ctx);
++
++/**
++ * Sets the status of a V4L2Context.
++ *
++ * @param[in] ctx A pointer to a V4L2Context.
++ * @param[in] cmd The status to set (VIDIOC_STREAMON or VIDIOC_STREAMOFF).
++ *                Warning: If VIDIOC_STREAMOFF is sent to a buffer context that still has some frames buffered,
++ *                those frames will be dropped.
++ * @return 0 in case of success, a negative value representing the error otherwise.
++ */
++int ff_v4l2_context_set_status(V4L2Context* ctx, int cmd);
++
++/**
++ * Dequeues a buffer from a V4L2Context to an AVPacket.
++ *
++ * The pkt must be non NULL.
++ * @param[in] ctx The V4L2Context to dequeue from.
++ * @param[inout] pkt The AVPacket to dequeue to.
++ * @return 0 in case of success, AVERROR(EAGAIN) if no buffer was ready, another negative error in case of error.
++ */
++int ff_v4l2_context_dequeue_packet(V4L2Context* ctx, AVPacket* pkt);
++
++/**
++ * Dequeues a buffer from a V4L2Context to an AVFrame.
++ *
++ * The frame must be non NULL.
++ * @param[in] ctx The V4L2Context to dequeue from.
++ * @param[inout] f The AVFrame to dequeue to.
++ * @return 0 in case of success, AVERROR(EAGAIN) if no buffer was ready, another negative error in case of error.
++ */
++int ff_v4l2_context_dequeue_frame(V4L2Context* ctx, AVFrame* f);
++
++/**
++ * Enqueues a buffer to a V4L2Context from an AVPacket
++ *
++ * The packet must be non NULL.
++ * When the size of the pkt is null, the buffer is not queued but a V4L2_DEC_CMD_STOP command is sent instead to the driver.
++ *
++ * @param[in] ctx The V4L2Context to enqueue to.
++ * @param[in] pkt A pointer to an AVPacket.
++ * @return 0 in case of success, a negative error otherwise.
++ */
++int ff_v4l2_context_enqueue_packet(V4L2Context* ctx, const AVPacket* pkt);
++
++/**
++ * Enqueues a buffer to a V4L2Context from an AVFrame
++ *
++ * The frame must be non NULL.
++ *
++ * @param[in] ctx The V4L2Context to enqueue to.
++ * @param[in] f A pointer to an AVFrame to enqueue.
++ * @return 0 in case of success, a negative error otherwise.
++ */
++int ff_v4l2_context_enqueue_frame(V4L2Context* ctx, const AVFrame* f);
++
++#endif // AVCODEC_V4L2_CONTEXT_H
+diff --git a/libavcodec/v4l2_fmt.c b/libavcodec/v4l2_fmt.c
+new file mode 100644
+index 0000000000..a7ce308696
+--- /dev/null
++++ b/libavcodec/v4l2_fmt.c
+@@ -0,0 +1,182 @@
++/*
++ * V4L2 format helper functions
++ *
++ * Copyright (C) 2017 Alexis Ballier <aballier@gentoo.org>
++ * Copyright (C) 2017 Jorge Ramirez <jorge.ramirez-ortiz@linaro.org>
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#include <linux/videodev2.h>
++#include <search.h>
++#include "v4l2_fmt.h"
++
++#define V4L2_FMT(x) V4L2_PIX_FMT_##x
++#define AV_CODEC(x) AV_CODEC_ID_##x
++#define AV_FMT(x)   AV_PIX_FMT_##x
++
++static const struct fmt_conversion {
++    enum AVPixelFormat avfmt;
++    enum AVCodecID avcodec;
++    uint32_t v4l2_fmt;
++} fmt_map[] = {
++    { AV_FMT(RGB555LE),    AV_CODEC(RAWVIDEO),    V4L2_FMT(RGB555) },
++    { AV_FMT(RGB555BE),    AV_CODEC(RAWVIDEO),    V4L2_FMT(RGB555X) },
++    { AV_FMT(RGB565LE),    AV_CODEC(RAWVIDEO),    V4L2_FMT(RGB565) },
++    { AV_FMT(RGB565BE),    AV_CODEC(RAWVIDEO),    V4L2_FMT(RGB565X) },
++    { AV_FMT(BGR24),       AV_CODEC(RAWVIDEO),    V4L2_FMT(BGR24) },
++    { AV_FMT(RGB24),       AV_CODEC(RAWVIDEO),    V4L2_FMT(RGB24) },
++    { AV_FMT(BGR0),        AV_CODEC(RAWVIDEO),    V4L2_FMT(BGR32) },
++    { AV_FMT(0RGB),        AV_CODEC(RAWVIDEO),    V4L2_FMT(RGB32) },
++    { AV_FMT(GRAY8),       AV_CODEC(RAWVIDEO),    V4L2_FMT(GREY) },
++    { AV_FMT(YUV420P),     AV_CODEC(RAWVIDEO),    V4L2_FMT(YUV420) },
++    { AV_FMT(YUYV422),     AV_CODEC(RAWVIDEO),    V4L2_FMT(YUYV) },
++    { AV_FMT(UYVY422),     AV_CODEC(RAWVIDEO),    V4L2_FMT(UYVY) },
++    { AV_FMT(YUV422P),     AV_CODEC(RAWVIDEO),    V4L2_FMT(YUV422P) },
++    { AV_FMT(YUV411P),     AV_CODEC(RAWVIDEO),    V4L2_FMT(YUV411P) },
++    { AV_FMT(YUV410P),     AV_CODEC(RAWVIDEO),    V4L2_FMT(YUV410) },
++    { AV_FMT(YUV410P),     AV_CODEC(RAWVIDEO),    V4L2_FMT(YVU410) },
++    { AV_FMT(NV12),        AV_CODEC(RAWVIDEO),    V4L2_FMT(NV12) },
++    { AV_FMT(NONE),        AV_CODEC(MJPEG),       V4L2_FMT(MJPEG) },
++    { AV_FMT(NONE),        AV_CODEC(MJPEG),       V4L2_FMT(JPEG) },
++#ifdef V4L2_PIX_FMT_SRGGB8
++    { AV_FMT(BAYER_BGGR8), AV_CODEC(RAWVIDEO),    V4L2_FMT(SBGGR8) },
++    { AV_FMT(BAYER_GBRG8), AV_CODEC(RAWVIDEO),    V4L2_FMT(SGBRG8) },
++    { AV_FMT(BAYER_GRBG8), AV_CODEC(RAWVIDEO),    V4L2_FMT(SGRBG8) },
++    { AV_FMT(BAYER_RGGB8), AV_CODEC(RAWVIDEO),    V4L2_FMT(SRGGB8) },
++#endif
++#ifdef V4L2_PIX_FMT_Y16
++    { AV_FMT(GRAY16LE),    AV_CODEC(RAWVIDEO),    V4L2_FMT(Y16) },
++#endif
++#ifdef V4L2_PIX_FMT_NV12M
++    { AV_FMT(NV12),        AV_CODEC(RAWVIDEO),    V4L2_FMT(NV12M) },
++#endif
++#ifdef V4L2_PIX_FMT_NV21M
++    { AV_FMT(NV21),        AV_CODEC(RAWVIDEO),    V4L2_FMT(NV21M) },
++#endif
++#ifdef V4L2_PIX_FMT_YUV420M
++    { AV_FMT(YUV420P),     AV_CODEC(RAWVIDEO),    V4L2_FMT(YUV420M) },
++#endif
++#ifdef V4L2_PIX_FMT_NV16M
++    { AV_FMT(NV16),        AV_CODEC(RAWVIDEO),    V4L2_FMT(NV16M) },
++#endif
++#ifdef V4L2_PIX_FMT_H263
++    { AV_FMT(NONE),        AV_CODEC(H263),        V4L2_FMT(H263) },
++#endif
++#ifdef V4L2_PIX_FMT_H264
++    { AV_FMT(NONE),        AV_CODEC(H264),        V4L2_FMT(H264) },
++#endif
++#ifdef V4L2_PIX_FMT_MPEG4
++    { AV_FMT(NONE),        AV_CODEC(MPEG4),       V4L2_FMT(MPEG4) },
++#endif
++#ifdef V4L2_PIX_FMT_CPIA1
++    { AV_FMT(NONE),        AV_CODEC(CPIA),        V4L2_FMT(CPIA1) },
++#endif
++#ifdef V4L2_PIX_FMT_DV
++    { AV_FMT(NONE),        AV_CODEC(DVVIDEO),     V4L2_FMT(DV) },
++#endif
++#ifdef V4L2_PIX_FMT_MPEG1
++    { AV_FMT(NONE),        AV_CODEC(MPEG1VIDEO),  V4L2_FMT(MPEG1) },
++#endif
++#ifdef V4L2_PIX_FMT_MPEG2
++    { AV_FMT(NONE),        AV_CODEC(MPEG2VIDEO),  V4L2_FMT(MPEG2) },
++#endif
++#ifdef V4L2_PIX_FMT_VP8
++    { AV_FMT(NONE),        AV_CODEC(VP8),         V4L2_FMT(VP8) },
++#endif
++#ifdef V4L2_PIX_FMT_VP9
++    { AV_FMT(NONE),        AV_CODEC(VP9),         V4L2_FMT(VP9) },
++#endif
++#ifdef V4L2_PIX_FMT_HEVC
++    { AV_FMT(NONE),        AV_CODEC(HEVC),        V4L2_FMT(HEVC) },
++#endif
++#ifdef V4L2_PIX_FMT_VC1_ANNEX_G
++    { AV_FMT(NONE),        AV_CODEC(VC1),         V4L2_FMT(VC1_ANNEX_G) },
++#endif
++};
++
++static int match_codec(const void *a, const void *b)
++{
++    if (*(enum AVCodecID *)a == ((struct fmt_conversion *)b)->avcodec)
++        return 0;
++
++    return 1;
++}
++
++uint32_t ff_v4l2_format_avcodec_to_v4l2(enum AVCodecID avcodec)
++{
++    size_t len = FF_ARRAY_ELEMS(fmt_map);
++    struct fmt_conversion *item;
++
++    item = lfind(&avcodec, fmt_map, &len, sizeof(fmt_map[0]), match_codec);
++    if (item)
++        return item->v4l2_fmt;
++
++    return 0;
++}
++
++static int match_fmt(const void *a, const void *b)
++{
++    if ( *(enum AVPixelFormat *)a == ((struct fmt_conversion *)b)->avfmt)
++        return 0;
++
++    return 1;
++}
++
++uint32_t ff_v4l2_format_avfmt_to_v4l2(enum AVPixelFormat avfmt)
++{
++    size_t len = FF_ARRAY_ELEMS(fmt_map);
++    struct fmt_conversion *item;
++
++    item = lfind(&avfmt, fmt_map, &len, sizeof(fmt_map[0]), match_fmt);
++    if (item)
++        return item->v4l2_fmt;
++
++    return 0;
++}
++
++struct v4l2fmt_avcodec_pair {
++    enum AVCodecID avcodec;
++    uint32_t v4l2_fmt;
++};
++
++static int match_codecfmt(const void *a, const void *b)
++{
++    struct v4l2fmt_avcodec_pair *key = (struct v4l2fmt_avcodec_pair *) a;
++    struct fmt_conversion *item = (struct fmt_conversion *) b;
++
++    if (key->avcodec == item->avcodec && key->v4l2_fmt == item->v4l2_fmt)
++        return 0;
++
++    return 1;
++}
++
++enum AVPixelFormat ff_v4l2_format_v4l2_to_avfmt(uint32_t v4l2_fmt, enum AVCodecID avcodec)
++{
++    struct v4l2fmt_avcodec_pair const key = {
++        .v4l2_fmt = v4l2_fmt,
++        .avcodec = avcodec,
++    };
++    size_t len = FF_ARRAY_ELEMS(fmt_map);
++    struct fmt_conversion *item;
++
++    item = lfind(&key, fmt_map, &len, sizeof(fmt_map[0]), match_codecfmt);
++    if (item)
++        return item->avfmt;
++
++    return AV_PIX_FMT_NONE;
++}
+diff --git a/libavcodec/v4l2_fmt.h b/libavcodec/v4l2_fmt.h
+new file mode 100644
+index 0000000000..01360029c8
+--- /dev/null
++++ b/libavcodec/v4l2_fmt.h
+@@ -0,0 +1,34 @@
++/*
++ * V4L2 format helper functions
++ *
++ * Copyright (C) 2017 Alexis Ballier <aballier@gentoo.org>
++ * Copyright (C) 2017 Jorge Ramirez <jorge.ramirez-ortiz@linaro.org>
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#ifndef AVCODEC_V4L2_FMT_H
++#define AVCODEC_V4L2_FMT_H
++
++#include "libavcodec/avcodec.h"
++#include "libavutil/pixfmt.h"
++
++enum AVPixelFormat ff_v4l2_format_v4l2_to_avfmt(uint32_t v4l2_fmt, enum AVCodecID avcodec);
++uint32_t ff_v4l2_format_avcodec_to_v4l2(enum AVCodecID avcodec);
++uint32_t ff_v4l2_format_avfmt_to_v4l2(enum AVPixelFormat avfmt);
++
++#endif /* AVCODEC_V4L2_FMT_H*/
+diff --git a/libavcodec/v4l2_m2m.c b/libavcodec/v4l2_m2m.c
+new file mode 100644
+index 0000000000..bd96a6d979
+--- /dev/null
++++ b/libavcodec/v4l2_m2m.c
+@@ -0,0 +1,404 @@
++/*
++ * V4L mem2mem
++ *
++ * Copyright (C) 2017 Alexis Ballier <aballier@gentoo.org>
++ * Copyright (C) 2017 Jorge Ramirez <jorge.ramirez-ortiz@linaro.org>
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#include <linux/videodev2.h>
++#include <sys/ioctl.h>
++#include <sys/mman.h>
++#include <unistd.h>
++#include <dirent.h>
++#include <fcntl.h>
++#include "libavcodec/avcodec.h"
++#include "libavcodec/internal.h"
++#include "libavutil/pixdesc.h"
++#include "libavutil/imgutils.h"
++#include "libavutil/pixfmt.h"
++#include "v4l2_context.h"
++#include "v4l2_fmt.h"
++#include "v4l2_m2m.h"
++
++static inline int v4l2_splane_video(struct v4l2_capability *cap)
++{
++    if (cap->capabilities & (V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_VIDEO_OUTPUT) &&
++        cap->capabilities & V4L2_CAP_STREAMING)
++        return 1;
++
++    if (cap->capabilities & V4L2_CAP_VIDEO_M2M)
++        return 1;
++
++    return 0;
++}
++
++static inline int v4l2_mplane_video(struct v4l2_capability *cap)
++{
++    if (cap->capabilities & (V4L2_CAP_VIDEO_CAPTURE_MPLANE | V4L2_CAP_VIDEO_OUTPUT_MPLANE) &&
++        cap->capabilities & V4L2_CAP_STREAMING)
++        return 1;
++
++    if (cap->capabilities & V4L2_CAP_VIDEO_M2M_MPLANE)
++        return 1;
++
++    return 0;
++}
++
++static int v4l2_prepare_contexts(V4L2m2mContext* s)
++{
++    struct v4l2_capability cap;
++    int ret;
++
++    s->capture.done = s->output.done = 0;
++    s->capture.name = "capture";
++    s->output.name = "output ";
++    atomic_init(&s->refcount, 0);
++    sem_init(&s->refsync, 0, 0);
++
++    memset(&cap, 0, sizeof(cap));
++    ret = ioctl(s->fd, VIDIOC_QUERYCAP, &cap);
++    if (ret < 0)
++        return ret;
++
++    av_log(s->avctx, AV_LOG_INFO, "driver '%s' on card '%s'\n", cap.driver, cap.card);
++
++    if (v4l2_mplane_video(&cap)) {
++        s->capture.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
++        s->output.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
++        return 0;
++    }
++
++    if (v4l2_splane_video(&cap)) {
++        s->capture.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
++        s->output.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
++        return 0;
++    }
++
++    return AVERROR(EINVAL);
++}
++
++static int v4l2_probe_driver(V4L2m2mContext* s)
++{
++    int ret;
++
++    s->fd = open(s->devname, O_RDWR | O_NONBLOCK, 0);
++    if (s->fd < 0)
++        return AVERROR(errno);
++
++    ret = v4l2_prepare_contexts(s);
++    if (ret < 0)
++        goto done;
++
++    ret = ff_v4l2_context_get_format(&s->output);
++    if (ret) {
++        av_log(s->avctx, AV_LOG_DEBUG, "v4l2 output format not supported\n");
++        goto done;
++    }
++
++    ret = ff_v4l2_context_get_format(&s->capture);
++    if (ret) {
++        av_log(s->avctx, AV_LOG_DEBUG, "v4l2 capture format not supported\n");
++        goto done;
++    }
++
++done:
++    if (close(s->fd) < 0) {
++        ret = AVERROR(errno);
++        av_log(s->avctx, AV_LOG_ERROR, "failure closing %s (%s)\n", s->devname, av_err2str(AVERROR(errno)));
++    }
++
++    s->fd = -1;
++
++    return ret;
++}
++
++static int v4l2_configure_contexts(V4L2m2mContext* s)
++{
++    void *log_ctx = s->avctx;
++    int ret;
++
++    s->fd = open(s->devname, O_RDWR | O_NONBLOCK, 0);
++    if (s->fd < 0)
++        return AVERROR(errno);
++
++    ret = v4l2_prepare_contexts(s);
++    if (ret < 0)
++        goto error;
++
++    ret = ff_v4l2_context_set_format(&s->output);
++    if (ret) {
++        av_log(log_ctx, AV_LOG_ERROR, "can't set v4l2 output format\n");
++        goto error;
++    }
++
++    ret = ff_v4l2_context_set_format(&s->capture);
++    if (ret) {
++        av_log(log_ctx, AV_LOG_ERROR, "can't to set v4l2 capture format\n");
++        goto error;
++    }
++
++    ret = ff_v4l2_context_init(&s->output);
++    if (ret) {
++        av_log(log_ctx, AV_LOG_ERROR, "no v4l2 output context's buffers\n");
++        goto error;
++    }
++
++    /* decoder's buffers need to be updated at a later stage */
++    if (!av_codec_is_decoder(s->avctx->codec)) {
++        ret = ff_v4l2_context_init(&s->capture);
++        if (ret) {
++            av_log(log_ctx, AV_LOG_ERROR, "no v4l2 capture context's buffers\n");
++            goto error;
++        }
++    }
++
++    return 0;
++
++error:
++    if (close(s->fd) < 0) {
++        ret = AVERROR(errno);
++        av_log(log_ctx, AV_LOG_ERROR, "error closing %s (%s)\n",
++            s->devname, av_err2str(AVERROR(errno)));
++    }
++    s->fd = -1;
++
++    return ret;
++}
++
++/******************************************************************************
++ *
++ *                  V4L2 M2M Interface
++ *
++ ******************************************************************************/
++int ff_v4l2_m2m_codec_reinit(V4L2m2mContext* s)
++{
++    int ret;
++
++    av_log(s->avctx, AV_LOG_DEBUG, "reinit context\n");
++
++    /* 1. streamoff */
++    ret = ff_v4l2_context_set_status(&s->capture, VIDIOC_STREAMOFF);
++    if (ret)
++        av_log(s->avctx, AV_LOG_ERROR, "capture VIDIOC_STREAMOFF\n");
++
++    /* 2. unmap the capture buffers (v4l2 and ffmpeg):
++     *    we must wait for all references to be released before being allowed
++     *    to queue new buffers.
++     */
++    av_log(s->avctx, AV_LOG_DEBUG, "waiting for user to release AVBufferRefs\n");
++    if (atomic_load(&s->refcount))
++        while(sem_wait(&s->refsync) == -1 && errno == EINTR);
++
++    ff_v4l2_context_release(&s->capture);
++
++    /* 3. get the new capture format */
++    ret = ff_v4l2_context_get_format(&s->capture);
++    if (ret) {
++        av_log(s->avctx, AV_LOG_ERROR, "query the new capture format\n");
++        return ret;
++    }
++
++    /* 4. set the capture format */
++    ret = ff_v4l2_context_set_format(&s->capture);
++    if (ret) {
++        av_log(s->avctx, AV_LOG_ERROR, "setting capture format\n");
++        return ret;
++    }
++
++    /* 5. decoder's buffers need to be updated at a later stage */
++    if (!av_codec_is_decoder(s->avctx->codec)) {
++        ret = ff_v4l2_context_init(&s->capture);
++        if (ret) {
++            av_log(s->avctx, AV_LOG_ERROR, "no v4l2 capture context's buffers\n");
++            return ret;
++        }
++    }
++
++    /* 6. complete reinit */
++    sem_destroy(&s->refsync);
++    sem_init(&s->refsync, 0, 0);
++    s->draining = 0;
++    s->reinit = 0;
++
++    return 0;
++}
++
++int ff_v4l2_m2m_codec_full_reinit(V4L2m2mContext *s)
++{
++    void *log_ctx = s->avctx;
++    int ret;
++
++    av_log(log_ctx, AV_LOG_DEBUG, "%s full reinit\n", s->devname);
++
++    /* wait for pending buffer references */
++    if (atomic_load(&s->refcount))
++        while(sem_wait(&s->refsync) == -1 && errno == EINTR);
++
++    /* do not close the driver */
++    ff_v4l2_m2m_codec_end(s->avctx);
++
++    /* start again now that we know the stream dimensions */
++    s->draining = 0;
++    s->reinit = 0;
++
++    ret = v4l2_prepare_contexts(s);
++    if (ret < 0)
++        goto error;
++
++    /* if a full re-init was requested - probe didn't run - we need to populate
++     * the format for each context
++     */
++    ret = ff_v4l2_context_get_format(&s->output);
++    if (ret) {
++        av_log(log_ctx, AV_LOG_DEBUG, "v4l2 output format not supported\n");
++        goto error;
++    }
++
++    ret = ff_v4l2_context_get_format(&s->capture);
++    if (ret) {
++        av_log(log_ctx, AV_LOG_DEBUG, "v4l2 capture format not supported\n");
++        goto error;
++    }
++
++    ret = ff_v4l2_context_set_format(&s->output);
++    if (ret) {
++        av_log(log_ctx, AV_LOG_ERROR, "can't set v4l2 output format\n");
++        goto error;
++    }
++
++    ret = ff_v4l2_context_set_format(&s->capture);
++    if (ret) {
++        av_log(log_ctx, AV_LOG_ERROR, "can't to set v4l2 capture format\n");
++        goto error;
++    }
++
++    ret = ff_v4l2_context_init(&s->output);
++    if (ret) {
++        av_log(log_ctx, AV_LOG_ERROR, "no v4l2 output context's buffers\n");
++        goto error;
++    }
++
++    /* decoder's buffers need to be updated at a later stage */
++    if (!av_codec_is_decoder(s->avctx->codec)) {
++        ret = ff_v4l2_context_init(&s->capture);
++        if (ret) {
++            av_log(log_ctx, AV_LOG_ERROR, "no v4l2 capture context's buffers\n");
++            goto error;
++        }
++    }
++
++    return 0;
++
++error:
++    if (close(s->fd) < 0) {
++        ret = AVERROR(errno);
++        av_log(log_ctx, AV_LOG_ERROR, "error closing %s (%s)\n",
++            s->devname, av_err2str(AVERROR(errno)));
++    }
++    s->fd = -1;
++
++    return ret;
++}
++
++int ff_v4l2_m2m_codec_end(AVCodecContext *avctx)
++{
++    V4L2m2mContext* s = avctx->priv_data;
++    int ret;
++
++    ret = ff_v4l2_context_set_status(&s->output, VIDIOC_STREAMOFF);
++    if (ret)
++            av_log(avctx, AV_LOG_ERROR, "VIDIOC_STREAMOFF %s\n", s->output.name);
++
++    ret = ff_v4l2_context_set_status(&s->capture, VIDIOC_STREAMOFF);
++    if (ret)
++        av_log(avctx, AV_LOG_ERROR, "VIDIOC_STREAMOFF %s\n", s->capture.name);
++
++    ff_v4l2_context_release(&s->output);
++
++    if (atomic_load(&s->refcount))
++        av_log(avctx, AV_LOG_ERROR, "ff_v4l2m2m_codec_end leaving pending buffers\n");
++
++    ff_v4l2_context_release(&s->capture);
++    sem_destroy(&s->refsync);
++
++    if (s->reinit)
++        return 0;
++
++    /* release the hardware */
++    if (close(s->fd) < 0 )
++        av_log(avctx, AV_LOG_ERROR, "failure closing %s (%s)\n", s->devname, av_err2str(AVERROR(errno)));
++
++    s->fd = -1;
++
++    if (s->orig_extradata) {
++        av_free(avctx->extradata);
++
++        avctx->extradata_size = s->orig_extradata_size;
++        avctx->extradata = s->orig_extradata;
++
++        s->orig_extradata_size = 0;
++        s->orig_extradata = NULL;
++    }
++
++    if (s->bsfc)
++        av_bsf_free(&s->bsfc);
++
++    return 0;
++}
++
++int ff_v4l2_m2m_codec_init(AVCodecContext *avctx)
++{
++    int ret = AVERROR(EINVAL);
++    struct dirent *entry;
++    char node[PATH_MAX];
++    DIR *dirp;
++
++    V4L2m2mContext *s = avctx->priv_data;
++    s->avctx = avctx;
++
++    dirp = opendir("/dev");
++    if (!dirp)
++        return AVERROR(errno);
++
++    for (entry = readdir(dirp); entry; entry = readdir(dirp)) {
++
++        if (strncmp(entry->d_name, "video", 5))
++            continue;
++
++        snprintf(node, sizeof(node), "/dev/%s", entry->d_name);
++        av_log(s->avctx, AV_LOG_DEBUG, "probing device %s\n", node);
++        strncpy(s->devname, node, strlen(node) + 1);
++        ret = v4l2_probe_driver(s);
++        if (!ret)
++                break;
++    }
++
++    closedir(dirp);
++
++    if (ret) {
++        av_log(s->avctx, AV_LOG_ERROR, "Could not find a valid device\n");
++        memset(s->devname, 0, sizeof(s->devname));
++
++        return ret;
++    }
++
++    av_log(s->avctx, AV_LOG_INFO, "Using device %s\n", node);
++
++    return v4l2_configure_contexts(s);
++}
+diff --git a/libavcodec/v4l2_m2m.h b/libavcodec/v4l2_m2m.h
+new file mode 100644
+index 0000000000..021d4e93aa
+--- /dev/null
++++ b/libavcodec/v4l2_m2m.h
+@@ -0,0 +1,108 @@
++/*
++ * V4L2 mem2mem helper functions
++ *
++ * Copyright (C) 2017 Alexis Ballier <aballier@gentoo.org>
++ * Copyright (C) 2017 Jorge Ramirez <jorge.ramirez-ortiz@linaro.org>
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#ifndef AVCODEC_V4L2_M2M_H
++#define AVCODEC_V4L2_M2M_H
++
++#include <semaphore.h>
++#include <unistd.h>
++#include <dirent.h>
++#include "libavcodec/avcodec.h"
++#include "v4l2_context.h"
++
++#define container_of(ptr, type, member) ({ \
++        const __typeof__(((type *)0)->member ) *__mptr = (ptr); \
++        (type *)((char *)__mptr - offsetof(type,member) );})
++
++#define V4L_M2M_DEFAULT_OPTS \
++    { "num_output_buffers", "Number of buffers in the output context",\
++        OFFSET(output.num_buffers), AV_OPT_TYPE_INT, { .i64 = 16 }, 6, INT_MAX, FLAGS }
++
++typedef struct V4L2m2mContext
++{
++    AVClass *class;
++    char devname[PATH_MAX];
++    int fd;
++
++    /* the codec context queues */
++    V4L2Context capture;
++    V4L2Context output;
++
++    /* bsfc */
++    AVBSFContext *bsfc;
++    uint32_t orig_extradata_size;
++    uint8_t *orig_extradata;
++
++    /* refcount of buffers held by the user */
++    atomic_uint refcount;
++
++    /* dynamic stream reconfig */
++    AVCodecContext *avctx;
++    sem_t refsync;
++    int reinit;
++
++    /* null frame/packet received */
++    int draining;
++} V4L2m2mContext;
++
++/**
++ * Probes the video nodes looking for the required codec capabilities.
++ *
++ * @param[in] ctx The AVCodecContext instantiated by the encoder/decoder.
++ *
++ * @returns 0 if a driver is found, a negative number otherwise.
++ */
++int ff_v4l2_m2m_codec_init(AVCodecContext *avctx);
++
++/**
++ * Releases all the codec resources if all AVBufferRefs have been returned to the
++ * ctx. Otherwise keep the driver open.
++ *
++ * @param[in] The AVCodecContext instantiated by the encoder/decoder.
++ *
++ * @returns 0
++ *
++ */
++int ff_v4l2_m2m_codec_end(AVCodecContext *avctx);
++
++/**
++ * Reinitializes the V4L2m2mContext when the driver cant continue processing
++ * with the capture parameters.
++ *
++ * @param[in] ctx The V4L2m2mContext instantiated by the encoder/decoder.
++ *
++ * @returns 0 in case of success, negative number otherwise
++ */
++int ff_v4l2_m2m_codec_reinit(V4L2m2mContext *ctx);
++
++/**
++ * Reinitializes the V4L2m2mContext when the driver cant continue processing
++ * with the  any of the current V4L2Contexts (ie, changes in output and capture).
++ *
++ * @param[in] ctx The V4L2m2mContext instantiated by the encoder/decoder.
++ *
++ * @returns 0 in case of success, negative number otherwise
++ */
++int ff_v4l2_m2m_codec_full_reinit(V4L2m2mContext *ctx);
++
++#endif /* AVCODEC_V4L2_M2M_H */
+diff --git a/libavcodec/v4l2_m2m_dec.c b/libavcodec/v4l2_m2m_dec.c
+new file mode 100644
+index 0000000000..2d96f13954
+--- /dev/null
++++ b/libavcodec/v4l2_m2m_dec.c
+@@ -0,0 +1,325 @@
++/*
++ * V4L2 mem2mem decoders
++ *
++ * Copyright (C) 2017 Alexis Ballier <aballier@gentoo.org>
++ * Copyright (C) 2017 Jorge Ramirez <jorge.ramirez-ortiz@linaro.org>
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#include <linux/videodev2.h>
++#include <sys/ioctl.h>
++#include "libavutil/pixfmt.h"
++#include "libavutil/pixdesc.h"
++#include "libavutil/opt.h"
++#include "libavcodec/avcodec.h"
++
++#include "v4l2_context.h"
++#include "v4l2_m2m.h"
++#include "v4l2_fmt.h"
++
++static int v4l2_try_start(AVCodecContext *avctx)
++{
++    V4L2m2mContext *s = avctx->priv_data;
++    V4L2Context *const capture = &s->capture;
++    V4L2Context *const output = &s->output;
++    struct v4l2_selection selection;
++    int ret;
++
++    /* 1. start the output process */
++    if (!output->streamon) {
++        ret = ff_v4l2_context_set_status(output, VIDIOC_STREAMON);
++        if (ret < 0) {
++            av_log(avctx, AV_LOG_DEBUG, "VIDIOC_STREAMON on output context\n");
++            return ret;
++        }
++    }
++
++    if (capture->streamon)
++        return 0;
++
++    /* 2. get the capture format */
++    capture->format.type = capture->type;
++    ret = ioctl(s->fd, VIDIOC_G_FMT, &capture->format);
++    if (ret) {
++        av_log(avctx, AV_LOG_WARNING, "VIDIOC_G_FMT ioctl\n");
++        return ret;
++    }
++
++    /* 2.1 update the AVCodecContext */
++    avctx->pix_fmt = ff_v4l2_format_v4l2_to_avfmt(capture->format.fmt.pix_mp.pixelformat, AV_CODEC_ID_RAWVIDEO);
++    capture->av_pix_fmt = avctx->pix_fmt;
++
++    /* 3. set the crop parameters */
++    selection.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
++    selection.r.height = avctx->coded_height;
++    selection.r.width = avctx->coded_width;
++    ret = ioctl(s->fd, VIDIOC_S_SELECTION, &selection);
++    if (!ret) {
++        ret = ioctl(s->fd, VIDIOC_G_SELECTION, &selection);
++        if (ret) {
++            av_log(avctx, AV_LOG_WARNING, "VIDIOC_G_SELECTION ioctl\n");
++        } else {
++            av_log(avctx, AV_LOG_DEBUG, "crop output %dx%d\n", selection.r.width, selection.r.height);
++            /* update the size of the resulting frame */
++            capture->height = selection.r.height;
++            capture->width  = selection.r.width;
++        }
++    }
++
++    /* 4. init the capture context now that we have the capture format */
++    if (!capture->buffers) {
++        ret = ff_v4l2_context_init(capture);
++        if (ret) {
++            av_log(avctx, AV_LOG_DEBUG, "can't request output buffers\n");
++            return ret;
++        }
++    }
++
++    /* 5. start the capture process */
++    ret = ff_v4l2_context_set_status(capture, VIDIOC_STREAMON);
++    if (ret) {
++        av_log(avctx, AV_LOG_DEBUG, "VIDIOC_STREAMON, on capture context\n");
++        return ret;
++    }
++
++    return 0;
++}
++
++static int v4l2_prepare_decoder(V4L2m2mContext *s)
++{
++    struct v4l2_event_subscription sub;
++    V4L2Context *output = &s->output;
++    int ret;
++
++    /**
++     * requirements
++     */
++    memset(&sub, 0, sizeof(sub));
++    sub.type = V4L2_EVENT_SOURCE_CHANGE;
++    ret = ioctl(s->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
++    if ( ret < 0) {
++        if (output->height == 0 || output->width == 0) {
++            av_log(s->avctx, AV_LOG_ERROR,
++                "the v4l2 driver does not support VIDIOC_SUBSCRIBE_EVENT\n"
++                "you must provide codec_height and codec_width on input\n");
++            return ret;
++        }
++    }
++
++    return 0;
++}
++
++static int v4l2_send_packet(AVCodecContext *avctx, const AVPacket *avpkt)
++{
++    V4L2m2mContext *s = avctx->priv_data;
++    V4L2Context *const output = &s->output;
++    AVPacket filtered_packet = { 0 };
++    int ret = 0;
++
++    if (s->draining)
++        goto done;
++
++    if (s->bsfc) {
++        AVPacket filter_packet = { 0 };
++
++        ret = av_packet_ref(&filter_packet, avpkt);
++        if (ret < 0) {
++            av_log(avctx, AV_LOG_ERROR, "filter failed to ref input packet\n");
++            goto done;
++        }
++
++        ret = av_bsf_send_packet(s->bsfc, &filter_packet);
++        if (ret < 0) {
++            av_log(avctx, AV_LOG_ERROR, "filter failed to send input packet\n");
++            goto done;
++        }
++
++        ret = av_bsf_receive_packet(s->bsfc, &filtered_packet);
++        if (ret < 0) {
++            av_log(avctx, AV_LOG_ERROR, "filter failed to receive output packet\n");
++            goto done;
++        }
++
++        avpkt = &filtered_packet;
++        av_packet_unref(&filter_packet);
++    }
++
++    ret = ff_v4l2_context_enqueue_packet(output, avpkt);
++    if (ret < 0) {
++        if (ret != AVERROR(ENOMEM))
++           return ret;
++        /* no input buffers available, continue dequeing */
++    }
++
++    v4l2_try_start(avctx);
++
++done:
++    av_packet_unref(&filtered_packet);
++    return ret;
++}
++
++static int v4l2_receive_frame(AVCodecContext *avctx, AVFrame *frame)
++{
++    V4L2m2mContext *s = avctx->priv_data;
++    V4L2Context *capture = &s->capture;
++
++    return ff_v4l2_context_dequeue_frame(capture, frame);
++}
++
++static int v4l2_decode_frame(AVCodecContext *avctx, void *frame, int *got_frame, AVPacket *pkt)
++{
++    int ret;
++
++    *got_frame = 0;
++
++    if (pkt) {
++        ret = avcodec_send_packet(avctx, pkt);
++        if (ret < 0 && ret != AVERROR_EOF)
++            return ret;
++    }
++
++    ret = avcodec_receive_frame(avctx, (AVFrame *) frame);
++    if (ret < 0 && ret != AVERROR(EAGAIN))
++        return ret;
++    if (ret >= 0)
++        *got_frame = 1;
++
++    return 0;
++}
++
++static av_cold int v4l2_init_bsf(AVCodecContext *avctx, const char *bsf_name)
++{
++    V4L2m2mContext *s = avctx->priv_data;
++    const AVBitStreamFilter *bsf;
++    void *extradata = NULL;
++    size_t size = 0;
++    int avret;
++
++    bsf = av_bsf_get_by_name(bsf_name);
++    if (!bsf) {
++        av_log(avctx, AV_LOG_ERROR, "Cannot open the %s BSF!\n", bsf_name);
++        return AVERROR_BSF_NOT_FOUND;
++    }
++
++    avret = av_bsf_alloc(bsf, &s->bsfc);
++    if (avret != 0)
++        return avret;
++
++    avret = avcodec_parameters_from_context(s->bsfc->par_in, avctx);
++    if (avret != 0)
++        return avret;
++
++    avret = av_bsf_init(s->bsfc);
++    if (avret != 0)
++        return avret;
++
++    /* Back up the extradata so it can be restored at close time. */
++    s->orig_extradata = avctx->extradata;
++    s->orig_extradata_size = avctx->extradata_size;
++
++    size = s->bsfc->par_out->extradata_size;
++    extradata = av_malloc(size + AV_INPUT_BUFFER_PADDING_SIZE);
++    if (!extradata) {
++        av_log(avctx, AV_LOG_ERROR, "Failed to allocate copy of extradata\n");
++        return AVERROR(ENOMEM);
++    }
++
++    memcpy(extradata, s->bsfc->par_out->extradata, size);
++
++    avctx->extradata = extradata;
++    avctx->extradata_size = size;
++
++    return 0;
++}
++
++static av_cold int v4l2_decode_init(AVCodecContext *avctx)
++{
++    V4L2m2mContext *s = avctx->priv_data;
++    V4L2Context *capture = &s->capture;
++    V4L2Context *output = &s->output;
++    int ret;
++
++    /* if these dimensions are invalid (ie, 0 or too small) an event will be raised
++     * by the v4l2 driver; this event will trigger a full pipeline reconfig and
++     * the proper values will be retrieved from the kernel driver.
++     */
++    output->height = capture->height = avctx->coded_height;
++    output->width = capture->width = avctx->coded_width;
++
++    output->av_codec_id = avctx->codec_id;
++    output->av_pix_fmt  = AV_PIX_FMT_NONE;
++
++    capture->av_codec_id = AV_CODEC_ID_RAWVIDEO;
++    capture->av_pix_fmt = avctx->pix_fmt;
++
++    ret = ff_v4l2_m2m_codec_init(avctx);
++    if (ret) {
++        av_log(avctx, AV_LOG_ERROR, "can't configure decoder\n");
++        return ret;
++    }
++
++    if (output->av_codec_id == AV_CODEC_ID_H264)
++        v4l2_init_bsf(avctx, "h264_mp4toannexb");
++
++    if (output->av_codec_id == AV_CODEC_ID_HEVC)
++        v4l2_init_bsf(avctx, "hevc_mp4toannexb");
++
++    return v4l2_prepare_decoder(s);
++}
++
++#define OFFSET(x) offsetof(V4L2m2mContext, x)
++#define FLAGS AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_DECODING_PARAM
++
++static const AVOption options[] = {
++    V4L_M2M_DEFAULT_OPTS,
++    { "num_capture_buffers", "Number of buffers in the capture context",
++        OFFSET(capture.num_buffers), AV_OPT_TYPE_INT, {.i64 = 20}, 20, INT_MAX, FLAGS },
++    { NULL},
++};
++
++#define M2MDEC(NAME, LONGNAME, CODEC) \
++static const AVClass v4l2_m2m_ ## NAME ## _dec_class = {\
++    .class_name = #NAME "_v4l2_m2m_decoder",\
++    .item_name  = av_default_item_name,\
++    .option     = options,\
++    .version    = LIBAVUTIL_VERSION_INT,\
++};\
++\
++AVCodec ff_ ## NAME ## _v4l2m2m_decoder = {                                             \
++    .name           = #NAME "_v4l2m2m" ,                                                \
++    .long_name      = NULL_IF_CONFIG_SMALL("V4L2 mem2mem " LONGNAME " decoder wrapper"),\
++    .type           = AVMEDIA_TYPE_VIDEO,                                               \
++    .id             = CODEC ,                                                           \
++    .priv_data_size = sizeof(V4L2m2mContext),                                           \
++    .priv_class     = &v4l2_m2m_ ## NAME ## _dec_class,                                 \
++    .init           = v4l2_decode_init,                                                 \
++    .decode         = v4l2_decode_frame,  /* for ffplay on 3.3.3 */                     \
++    .send_packet    = v4l2_send_packet,                                                 \
++    .receive_frame  = v4l2_receive_frame,                                               \
++    .close          = ff_v4l2_m2m_codec_end,                                            \
++};                                                                                      \
++
++M2MDEC(mpeg1, "MPEG1", AV_CODEC_ID_MPEG1VIDEO);
++M2MDEC(mpeg2, "MPEG2", AV_CODEC_ID_MPEG2VIDEO);
++M2MDEC(mpeg4, "MPEG4", AV_CODEC_ID_MPEG4);
++M2MDEC(h263,  "H.263", AV_CODEC_ID_H263);
++M2MDEC(h264,  "H.264", AV_CODEC_ID_H264);
++M2MDEC(hevc,  "HEVC",  AV_CODEC_ID_HEVC);
++M2MDEC(vc1 ,  "VC1",   AV_CODEC_ID_VC1);
++M2MDEC(vp8,   "VP8",   AV_CODEC_ID_VP8);
++M2MDEC(vp9,   "VP9",   AV_CODEC_ID_VP9);
+diff --git a/libavcodec/v4l2_m2m_enc.c b/libavcodec/v4l2_m2m_enc.c
+new file mode 100644
+index 0000000000..e40a120b53
+--- /dev/null
++++ b/libavcodec/v4l2_m2m_enc.c
+@@ -0,0 +1,352 @@
++/*
++ * V4L2 mem2mem encoders
++ *
++ * Copyright (C) 2017 Alexis Ballier <aballier@gentoo.org>
++ * Copyright (C) 2017 Jorge Ramirez <jorge.ramirez-ortiz@linaro.org>
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#include <linux/videodev2.h>
++#include <sys/ioctl.h>
++#include <search.h>
++#include "libavcodec/avcodec.h"
++#include "libavutil/pixdesc.h"
++#include "libavutil/pixfmt.h"
++#include "libavutil/opt.h"
++#include "v4l2_context.h"
++#include "v4l2_m2m.h"
++
++#define MPEG_CID(x) V4L2_CID_MPEG_VIDEO_##x
++#define MPEG_VIDEO(x) V4L2_MPEG_VIDEO_##x
++
++static inline void v4l2_set_timeperframe(V4L2m2mContext *s, unsigned int num, unsigned int den)
++{
++    struct v4l2_streamparm parm = { 0 };
++
++    parm.type = V4L2_TYPE_IS_MULTIPLANAR(s->output.type) ? V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE : V4L2_BUF_TYPE_VIDEO_OUTPUT;
++    parm.parm.output.timeperframe.denominator = den;
++    parm.parm.output.timeperframe.numerator = num;
++
++    if (ioctl(s->fd, VIDIOC_S_PARM, &parm) < 0)
++        av_log(s->avctx, AV_LOG_WARNING, "Failed to set timeperframe");
++}
++
++static inline void v4l2_set_ext_ctrl(V4L2m2mContext *s, unsigned int id, signed int value, const char *name)
++{
++    struct v4l2_ext_controls ctrls = { 0 };
++    struct v4l2_ext_control ctrl = { 0 };
++
++    /* set ctrls */
++    ctrls.ctrl_class = V4L2_CTRL_CLASS_MPEG;
++    ctrls.controls = &ctrl;
++    ctrls.count = 1;
++
++    /* set ctrl*/
++    ctrl.value = value;
++    ctrl.id = id ;
++
++    if (ioctl(s->fd, VIDIOC_S_EXT_CTRLS, &ctrls) < 0)
++        av_log(s->avctx, AV_LOG_WARNING, "Failed to set %s\n", name);
++    else
++        av_log(s->avctx, AV_LOG_DEBUG, "Encoder: %s = %d\n", name, value);
++}
++
++static inline int v4l2_get_ext_ctrl(V4L2m2mContext *s, unsigned int id, signed int *value, const char *name)
++{
++    struct v4l2_ext_controls ctrls = { 0 };
++    struct v4l2_ext_control ctrl = { 0 };
++    int ret;
++
++    /* set ctrls */
++    ctrls.ctrl_class = V4L2_CTRL_CLASS_MPEG;
++    ctrls.controls = &ctrl;
++    ctrls.count = 1;
++
++    /* set ctrl*/
++    ctrl.id = id ;
++
++    ret = ioctl(s->fd, VIDIOC_G_EXT_CTRLS, &ctrls);
++    if (ret < 0) {
++        av_log(s->avctx, AV_LOG_WARNING, "Failed to set %s\n", name);
++        return ret;
++    }
++
++    *value = ctrl.value;
++
++    return 0;
++}
++
++static int match_profile(const void *a, const void *b)
++{
++    if (*(unsigned int *)a == *(unsigned int *)b)
++        return 0;
++
++    return 1;
++}
++
++static inline unsigned int v4l2_h264_profile_from_ff(int p)
++{
++    struct h264_profile  {
++        unsigned int ffmpeg_val;
++        unsigned int v4l2_val;
++    } *val, profile[] = {
++        { FF_PROFILE_H264_CONSTRAINED_BASELINE, MPEG_VIDEO(H264_PROFILE_CONSTRAINED_BASELINE) },
++        { FF_PROFILE_H264_HIGH_444_PREDICTIVE, MPEG_VIDEO(H264_PROFILE_HIGH_444_PREDICTIVE) },
++        { FF_PROFILE_H264_HIGH_422_INTRA, MPEG_VIDEO(H264_PROFILE_HIGH_422_INTRA) },
++        { FF_PROFILE_H264_HIGH_444_INTRA, MPEG_VIDEO(H264_PROFILE_HIGH_444_INTRA) },
++        { FF_PROFILE_H264_HIGH_10_INTRA, MPEG_VIDEO(H264_PROFILE_HIGH_10_INTRA) },
++        { FF_PROFILE_H264_HIGH_422, MPEG_VIDEO(H264_PROFILE_HIGH_422) },
++        { FF_PROFILE_H264_BASELINE, MPEG_VIDEO(H264_PROFILE_BASELINE) },
++        { FF_PROFILE_H264_EXTENDED, MPEG_VIDEO(H264_PROFILE_EXTENDED) },
++        { FF_PROFILE_H264_HIGH_10, MPEG_VIDEO(H264_PROFILE_HIGH_10) },
++        { FF_PROFILE_H264_MAIN, MPEG_VIDEO(H264_PROFILE_MAIN) },
++        { FF_PROFILE_H264_HIGH, MPEG_VIDEO(H264_PROFILE_HIGH) },
++    };
++    size_t len = FF_ARRAY_ELEMS(profile);
++
++    val = lfind(&p, profile, &len, sizeof(profile[0]), match_profile);
++    if (val)
++        return val->v4l2_val;
++
++    return AVERROR(ENOENT);
++}
++
++static inline int v4l2_mpeg4_profile_from_ff(int p)
++{
++    struct mpeg4_profile {
++        unsigned int ffmpeg_val;
++        unsigned int v4l2_val;
++    } *val, profile[] = {
++        { FF_PROFILE_MPEG4_ADVANCED_CODING, MPEG_VIDEO(MPEG4_PROFILE_ADVANCED_CODING_EFFICIENCY) },
++        { FF_PROFILE_MPEG4_ADVANCED_SIMPLE, MPEG_VIDEO(MPEG4_PROFILE_ADVANCED_SIMPLE) },
++        { FF_PROFILE_MPEG4_SIMPLE_SCALABLE, MPEG_VIDEO(MPEG4_PROFILE_SIMPLE_SCALABLE) },
++        { FF_PROFILE_MPEG4_SIMPLE, MPEG_VIDEO(MPEG4_PROFILE_SIMPLE) },
++        { FF_PROFILE_MPEG4_CORE, MPEG_VIDEO(MPEG4_PROFILE_CORE) },
++    };
++    size_t len = FF_ARRAY_ELEMS(profile);
++
++    val = lfind(&p, profile, &len, sizeof(profile[0]), match_profile);
++    if (val)
++        return val->v4l2_val;
++
++    return AVERROR(ENOENT);
++}
++
++static int v4l2_check_b_frame_support(V4L2m2mContext *s)
++{
++    if (s->avctx->max_b_frames)
++        av_log(s->avctx, AV_LOG_WARNING, "Encoder does not support b-frames yet\n");
++
++    v4l2_set_ext_ctrl(s, MPEG_CID(B_FRAMES), 0, "number of B-frames");
++    v4l2_get_ext_ctrl(s, MPEG_CID(B_FRAMES), &s->avctx->max_b_frames, "number of B-frames");
++    if (s->avctx->max_b_frames == 0)
++        return 0;
++
++    avpriv_report_missing_feature(s->avctx, "DTS/PTS calculation for V4L2 encoding");
++
++    return AVERROR_PATCHWELCOME;
++}
++
++static int v4l2_prepare_encoder(V4L2m2mContext *s)
++{
++    AVCodecContext *avctx = s->avctx;
++    int qmin_cid, qmax_cid, qmin, qmax;
++    int ret, val;
++
++    /**
++     * requirements
++     */
++    ret = v4l2_check_b_frame_support(s);
++    if (ret)
++        return ret;
++
++    /**
++     * settingss
++     */
++    if (avctx->framerate.num || avctx->framerate.den)
++        v4l2_set_timeperframe(s, avctx->framerate.num, avctx->framerate.den);
++
++    /* set ext ctrls */
++    v4l2_set_ext_ctrl(s, MPEG_CID(HEADER_MODE), MPEG_VIDEO(HEADER_MODE_SEPARATE), "header mode");
++    v4l2_set_ext_ctrl(s, MPEG_CID(BITRATE) , avctx->bit_rate, "bit rate");
++    v4l2_set_ext_ctrl(s, MPEG_CID(GOP_SIZE), avctx->gop_size,"gop size");
++
++    av_log(avctx, AV_LOG_DEBUG,
++        "Encoder Context: id (%d), profile (%d), frame rate(%d/%d), number b-frames (%d), "
++        "gop size (%d), bit rate (%ld), qmin (%d), qmax (%d)\n",
++        avctx->codec_id, avctx->profile, avctx->framerate.num, avctx->framerate.den,
++        avctx->max_b_frames, avctx->gop_size, avctx->bit_rate, avctx->qmin, avctx->qmax);
++
++    switch (avctx->codec_id) {
++    case AV_CODEC_ID_H264:
++        val = v4l2_h264_profile_from_ff(avctx->profile);
++        if (val < 0)
++            av_log(avctx, AV_LOG_WARNING, "h264 profile not found\n");
++        else
++            v4l2_set_ext_ctrl(s, MPEG_CID(H264_PROFILE), val, "h264 profile");
++        qmin_cid = MPEG_CID(H264_MIN_QP);
++        qmax_cid = MPEG_CID(H264_MAX_QP);
++        qmin = 0;
++        qmax = 51;
++        break;
++    case AV_CODEC_ID_MPEG4:
++        val = v4l2_mpeg4_profile_from_ff(avctx->profile);
++        if (val < 0)
++            av_log(avctx, AV_LOG_WARNING, "mpeg4 profile not found\n");
++        else
++            v4l2_set_ext_ctrl(s, MPEG_CID(MPEG4_PROFILE), val, "mpeg4 profile");
++        qmin_cid = MPEG_CID(MPEG4_MIN_QP);
++        qmax_cid = MPEG_CID(MPEG4_MAX_QP);
++        if (avctx->flags & CODEC_FLAG_QPEL)
++            v4l2_set_ext_ctrl(s, MPEG_CID(MPEG4_QPEL), 1, "qpel");
++        qmin = 1;
++        qmax = 31;
++        break;
++    case AV_CODEC_ID_H263:
++        qmin_cid = MPEG_CID(H263_MIN_QP);
++        qmax_cid = MPEG_CID(H263_MAX_QP);
++        qmin = 1;
++        qmax = 31;
++        break;
++    case AV_CODEC_ID_VP8:
++        qmin_cid = MPEG_CID(VPX_MIN_QP);
++        qmax_cid = MPEG_CID(VPX_MAX_QP);
++        qmin = 0;
++        qmax = 127;
++        break;
++    case AV_CODEC_ID_VP9:
++        qmin_cid = MPEG_CID(VPX_MIN_QP);
++        qmax_cid = MPEG_CID(VPX_MAX_QP);
++        qmin = 0;
++        qmax = 255;
++        break;
++    default:
++        return 0;
++    }
++
++    if (qmin != avctx->qmin || qmax != avctx->qmax)
++        av_log(avctx, AV_LOG_WARNING, "Encoder adjusted: qmin (%d), qmax (%d)\n", qmin, qmax);
++
++    v4l2_set_ext_ctrl(s, qmin_cid, qmin, "minimum video quantizer scale");
++    v4l2_set_ext_ctrl(s, qmax_cid, qmax, "maximum video quantizer scale");
++
++    return 0;
++}
++
++static int v4l2_send_frame(AVCodecContext *avctx, const AVFrame *frame)
++{
++    V4L2m2mContext *s = avctx->priv_data;
++    V4L2Context *const output = &s->output;
++
++    return ff_v4l2_context_enqueue_frame(output, frame);
++}
++
++static int v4l2_receive_packet(AVCodecContext *avctx, AVPacket *avpkt)
++{
++    V4L2m2mContext *s = avctx->priv_data;
++    V4L2Context *const capture = &s->capture;
++    V4L2Context *const output = &s->output;
++    int ret;
++
++    if (s->draining)
++        goto dequeue;
++
++    if (!output->streamon) {
++        ret = ff_v4l2_context_set_status(output, VIDIOC_STREAMON);
++        if (ret) {
++            av_log(avctx, AV_LOG_ERROR, "VIDIOC_STREAMOFF failed on output context\n");
++            return ret;
++        }
++    }
++
++    if (!capture->streamon) {
++        ret = ff_v4l2_context_set_status(capture, VIDIOC_STREAMON);
++        if (ret) {
++            av_log(avctx, AV_LOG_ERROR, "VIDIOC_STREAMON failed on capture context\n");
++            return ret;
++        }
++    }
++
++dequeue:
++    return ff_v4l2_context_dequeue_packet(capture, avpkt);
++}
++
++static av_cold int v4l2_encode_init(AVCodecContext *avctx)
++{
++    V4L2m2mContext *s = avctx->priv_data;
++    V4L2Context *capture = &s->capture;
++    V4L2Context *output = &s->output;
++    int ret;
++
++    /* common settings output/capture */
++    output->height = capture->height = avctx->height;
++    output->width = capture->width = avctx->width;
++
++    /* output context */
++    output->av_codec_id = AV_CODEC_ID_RAWVIDEO;
++    output->av_pix_fmt = avctx->pix_fmt;
++
++    /* capture context */
++    capture->av_codec_id = avctx->codec_id;
++    capture->av_pix_fmt = AV_PIX_FMT_NONE;
++
++    ret = ff_v4l2_m2m_codec_init(avctx);
++    if (ret) {
++        av_log(avctx, AV_LOG_ERROR, "can't configure encoder\n");
++        return ret;
++    }
++
++    return v4l2_prepare_encoder(s);
++}
++
++#define OFFSET(x) offsetof(V4L2m2mContext, x)
++#define FLAGS AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
++
++static const AVOption options[] = {
++    V4L_M2M_DEFAULT_OPTS,
++    { "num_capture_buffers", "Number of buffers in the capture context",
++        OFFSET(capture.num_buffers), AV_OPT_TYPE_INT, {.i64 = 4 }, 4, INT_MAX, FLAGS },
++    { NULL },
++};
++
++#define M2MENC(NAME, LONGNAME, CODEC) \
++static const AVClass v4l2_m2m_ ## NAME ## _enc_class = {\
++    .class_name = #NAME "_v4l2_m2m_encoder",\
++    .item_name  = av_default_item_name,\
++    .option     = options,\
++    .version    = LIBAVUTIL_VERSION_INT,\
++};\
++\
++AVCodec ff_ ## NAME ## _v4l2m2m_encoder = { \
++    .name           = #NAME "_v4l2m2m" ,\
++    .long_name      = NULL_IF_CONFIG_SMALL("V4L2 mem2mem " LONGNAME " encoder wrapper"),\
++    .type           = AVMEDIA_TYPE_VIDEO,\
++    .id             = CODEC ,\
++    .priv_data_size = sizeof(V4L2m2mContext),\
++    .priv_class     = &v4l2_m2m_ ## NAME ##_enc_class,\
++    .init           = v4l2_encode_init,\
++    .send_frame     = v4l2_send_frame,\
++    .receive_packet = v4l2_receive_packet,\
++    .close          = ff_v4l2_m2m_codec_end,\
++};
++
++M2MENC(mpeg4,"MPEG4", AV_CODEC_ID_MPEG4);
++M2MENC(h263, "H.263", AV_CODEC_ID_H263);
++M2MENC(h264, "H.264", AV_CODEC_ID_H264);
++M2MENC(hevc, "HEVC",  AV_CODEC_ID_HEVC);
++M2MENC(vp8,  "VP8",   AV_CODEC_ID_VP8);
+-- 
+2.14.2
+
