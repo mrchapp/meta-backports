@@ -1,0 +1,56 @@
+From eb84b427e9f228b6c569f385391003979ef65510 Mon Sep 17 00:00:00 2001
+From: James Almer <jamrial@gmail.com>
+Date: Sat, 23 Sep 2017 18:12:56 -0300
+Subject: [PATCH 3/7] avcodec/v4l2_m2m: add missing header inclusions
+
+Should fix checkheaders on systems where v4l2_m2m is enabled.
+
+Signed-off-by: James Almer <jamrial@gmail.com>
+---
+ libavcodec/v4l2_buffers.h | 2 ++
+ libavcodec/v4l2_context.h | 2 ++
+ libavcodec/v4l2_m2m.h     | 2 ++
+ 3 files changed, 6 insertions(+)
+
+diff --git a/libavcodec/v4l2_buffers.h b/libavcodec/v4l2_buffers.h
+index 8901a0952f..5d25a87750 100644
+--- a/libavcodec/v4l2_buffers.h
++++ b/libavcodec/v4l2_buffers.h
+@@ -24,6 +24,8 @@
+ #ifndef AVCODEC_V4L2_BUFFERS_H
+ #define AVCODEC_V4L2_BUFFERS_H
+ 
++#include <linux/videodev2.h>
++
+ enum V4L2Buffer_status {
+     V4L2BUF_AVAILABLE,
+     V4L2BUF_IN_DRIVER,
+diff --git a/libavcodec/v4l2_context.h b/libavcodec/v4l2_context.h
+index b6667a04e3..503cc36dc4 100644
+--- a/libavcodec/v4l2_context.h
++++ b/libavcodec/v4l2_context.h
+@@ -25,6 +25,8 @@
+ #define AVCODEC_V4L2_CONTEXT_H
+ 
+ #include <stdatomic.h>
++#include <linux/videodev2.h>
++
+ #include "libavcodec/avcodec.h"
+ #include "libavutil/pixfmt.h"
+ #include "libavutil/frame.h"
+diff --git a/libavcodec/v4l2_m2m.h b/libavcodec/v4l2_m2m.h
+index 021d4e93aa..e11b8f8d93 100644
+--- a/libavcodec/v4l2_m2m.h
++++ b/libavcodec/v4l2_m2m.h
+@@ -27,6 +27,8 @@
+ #include <semaphore.h>
+ #include <unistd.h>
+ #include <dirent.h>
++#include <linux/videodev2.h>
++
+ #include "libavcodec/avcodec.h"
+ #include "v4l2_context.h"
+ 
+-- 
+2.14.2
+
