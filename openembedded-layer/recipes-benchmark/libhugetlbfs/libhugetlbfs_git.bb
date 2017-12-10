@@ -7,18 +7,17 @@ DEPENDS = "sysfsutils perl"
 RDEPENDS_${PN} += "bash perl python python-io python-lang python-subprocess python-resource ${PN}-perl"
 RDEPENDS_${PN}-tests += "bash"
 
-PV = "2.20"
+PV = "2.20+git${SRCPV}+next"
 PE = "1"
 
-SRCREV = "e44180072b796c0e28e53c4d01ef6279caaa2a99"
+SRCREV = "02df38e93e25e07f4d54edae94fb4ec90b7a2824"
 SRC_URI = " \
-    git://github.com/libhugetlbfs/libhugetlbfs.git;protocol=https \
+    git://github.com/libhugetlbfs/libhugetlbfs.git;protocol=https;branch=next \
     file://skip-checking-LIB32-and-LIB64-if-they-point-to-the-s.patch \
     file://libhugetlbfs-avoid-search-host-library-path-for-cros.patch \
     file://tests-Makefile-install-static-4G-edge-testcases.patch \
     file://0001-run_test.py-not-use-hard-coded-path-.-obj-hugeadm.patch \
     file://libhugetlbfs-elf_i386-avoid-search-host-library-path.patch \
-    file://Force-text-segment-alignment-to-0x08000000-for-i386-.patch \
 "
 
 S = "${WORKDIR}/git"
@@ -32,6 +31,8 @@ LIBHUGETLBFS_ARCH_powerpc64 = "ppc64"
 EXTRA_OEMAKE = "'ARCH=${LIBHUGETLBFS_ARCH}' 'OPT=${CFLAGS}' 'CC=${CC}' ${LIBARGS} BUILDTYPE=NATIVEONLY V=2"
 PARALLEL_MAKE = ""
 CFLAGS += "-fexpensive-optimizations -frename-registers -fomit-frame-pointer -g0"
+
+export HUGETLB_LDSCRIPT_PATH="${S}/ldscripts"
 
 TARGET_CC_ARCH += "${LDFLAGS}"
 
