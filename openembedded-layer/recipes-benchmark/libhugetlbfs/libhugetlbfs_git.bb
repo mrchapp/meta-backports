@@ -3,8 +3,8 @@ HOMEPAGE = "https://github.com/libhugetlbfs/libhugetlbfs"
 LICENSE = "LGPLv2.1"
 LIC_FILES_CHKSUM = "file://LGPL-2.1;md5=2d5025d4aa3495befef8f17206a5b0a1"
 
-DEPENDS = "sysfsutils perl"
-RDEPENDS_${PN} += "bash perl python python-io python-lang python-subprocess python-resource ${PN}-perl"
+DEPENDS = "sysfsutils"
+RDEPENDS_${PN} += "bash python python-io python-lang python-subprocess python-resource"
 RDEPENDS_${PN}-tests += "bash"
 
 PV = "2.20+git${SRCPV}+next"
@@ -42,14 +42,6 @@ do_configure() {
     if [ "${@bb.utils.filter('DISTRO_FEATURES', 'ld-is-gold', d)}" ]; then
       sed -i 's/CUSTOM_LDSCRIPTS = yes/CUSTOM_LDSCRIPTS = no/'  Makefile
     fi
-
-    # fixup perl module directory hardcoded to perl5
-    sed -i 's/perl5/perl/g'  Makefile
-
-    # fixup to install perl module under $(LIBDIR)/perl/${@get_perl_version(d)}/TLBC
-    # to avoid below error
-    # Can't locate TLBC/OpCollect.pm in @INC
-    sed -i '/^PMDIR/ s:perl:perl/${@get_perl_version(d)}:g' Makefile
 }
 
 do_install() {
@@ -60,11 +52,10 @@ do_install() {
 }
 
 
-PACKAGES =+ "${PN}-perl ${PN}-tests "
+PACKAGES =+ "${PN}-tests "
 FILES_${PN} += "${libdir}/*.so"
 FILES_${PN}-dev = "${includedir}"
 FILES_${PN}-dbg += "${libdir}/libhugetlbfs/tests/obj32/.debug ${libdir}/libhugetlbfs/tests/obj64/.debug"
-FILES_${PN}-perl = "${libdir}/perl"
 FILES_${PN}-tests += "${libdir}/libhugetlbfs/tests"
 
 INSANE_SKIP_${PN} = "dev-so"
