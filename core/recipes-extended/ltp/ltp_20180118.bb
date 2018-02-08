@@ -21,11 +21,11 @@ DEPENDS_append_libc-musl = " fts "
 EXTRA_OEMAKE_append_libc-musl = " LIBC=musl "
 CFLAGS_append_powerpc64 = " -D__SANE_USERSPACE_TYPES__"
 CFLAGS_append_mipsarchn64 = " -D__SANE_USERSPACE_TYPES__"
-SRCREV = "e671f2a13c695bbd87f7dfec2954ca7e3c43f377"
+SRCREV = "731cd34e682d297b207668be8b1d15320a9ac1b1"
 
 SRC_URI = "git://github.com/linux-test-project/ltp.git \
-           file://0001-add-_GNU_SOURCE-to-pec_listener.c.patch \
-           file://0002-Add-knob-to-control-whether-numa-support-should-be-c.patch \
+           file://0001-configure-add-knob-to-control-numa-support.patch \
+           file://0001-configure-Fix-default-value-of-without-numa-switch-i.patch \
            file://0003-Add-knob-to-control-tirpc-support.patch \
            file://0004-build-Add-option-to-select-libc-implementation.patch \
            file://0005-kernel-controllers-Link-with-libfts-explicitly-on-mu.patch \
@@ -33,24 +33,17 @@ SRC_URI = "git://github.com/linux-test-project/ltp.git \
            file://0008-Check-if-__GLIBC_PREREQ-is-defined-before-using-it.patch \
            file://0009-fix-redefinition-of-struct-msgbuf-error-building-wit.patch \
            file://0010-replace-__BEGIN_DECLS-and-__END_DECLS.patch \
-           file://0011-Rename-sigset-variable-to-sigset1.patch \
            file://0018-guard-mallocopt-with-__GLIBC__.patch \
            file://0020-getdents-define-getdents-getdents64-only-for-glibc.patch \
            file://0021-Define-_GNU_SOURCE-for-MREMAP_MAYMOVE-definition.patch \
            file://0023-ptrace-Use-int-instead-of-enum-__ptrace_request.patch \
            file://0024-rt_sigaction-rt_sigprocmark-Define-_GNU_SOURCE.patch \
-           file://0025-mc_gethost-include-sys-types.h.patch \
            file://0026-crash01-Define-_GNU_SOURCE.patch \
-           file://0027-sysconf01-Use-_SC_2_C_VERSION-conditionally.patch \
            file://0028-rt_sigaction.h-Use-sighandler_t-instead-of-__sighand.patch \
-           file://0030-lib-Use-PTHREAD_MUTEX_RECURSIVE-in-place-of-PTHREAD_.patch \
-           file://0033-shmat1-Cover-GNU-specific-code-under-__USE_GNU.patch \
            file://0034-periodic_output.patch \
            file://0035-fix-test_proc_kill-hang.patch \
            file://0036-testcases-network-nfsv4-acl-acl1.c-Security-fix-on-s.patch \
-           file://0037-commands-nm-fix-typo-INSTALL_TARTGETS-INSTALL_TARGET.patch \
-           file://0038-fanotify-fix-build-failure-with-Werror-format-securi.patch \
-           file://0039-containers-netns-load-veth-module.patch \
+           file://0039-commands-ar01-Fix-for-test-in-deterministic-mode.patch \
            "
 
 S = "${WORKDIR}/git"
