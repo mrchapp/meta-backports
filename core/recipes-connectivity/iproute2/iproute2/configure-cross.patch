@@ -1,22 +1,19 @@
-From fc00c43f31ca66c7ef081e86efd7cd54ec6a60d5 Mon Sep 17 00:00:00 2001
+From 85b0589b4843c03e8e6fd9416d71ea449a73c5c0 Mon Sep 17 00:00:00 2001
 From: Koen Kooi <koen@dominion.thruhere.net>
 Date: Thu, 3 Nov 2011 10:46:16 +0100
-Subject: [PATCH 1/4] make configure cross compile safe
+Subject: [PATCH] make configure cross compile safe
 
 According to Kevin Tian:
 Upstream-Status: Pending
 
 Signed-off-by: Koen Kooi <koen@dominion.thruhere.net>
 Signed-off-by: Shane Wang <shane.wang@intel.com>
----
- configure | 3 ++-
- 1 file changed, 2 insertions(+), 1 deletion(-)
 
-diff --git a/configure b/configure
-index 5ef5cd4cf9cd..9a092e749ff3 100755
---- a/configure
-+++ b/configure
-@@ -3,6 +3,7 @@
+Index: iproute2-4.14.1/configure
+===================================================================
+--- iproute2-4.14.1.orig/configure
++++ iproute2-4.14.1/configure
+@@ -2,6 +2,7 @@
  # This is not an autoconf generated configure
  #
  INCLUDE=${1:-"$PWD/include"}
@@ -24,7 +21,7 @@ index 5ef5cd4cf9cd..9a092e749ff3 100755
  
  # Output file which is input to Makefile
  CONFIG=config.mk
-@@ -184,7 +185,7 @@ check_ipt_lib_dir()
+@@ -195,7 +196,7 @@ check_ipt_lib_dir()
  		return
  	fi
  
@@ -33,6 +30,3 @@ index 5ef5cd4cf9cd..9a092e749ff3 100755
  	do
  		for file in $dir/{xtables,iptables}/lib*t_*so ; do
  			if [ -f $file ]; then
--- 
-2.17.0
-
