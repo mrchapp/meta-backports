@@ -1,0 +1,32 @@
+From 39d70f513536bdd0f0068c796ea0228e929ca648 Mon Sep 17 00:00:00 2001
+From: Nicolas Dechesne <nicolas.dechesne@linaro.org>
+Date: Mon, 29 May 2017 10:31:09 +0200
+Subject: [PATCH] libdrm: upgrade to 2.4.81
+
+Signed-off-by: Nicolas Dechesne <nicolas.dechesne@linaro.org>
+---
+ meta/recipes-graphics/drm/{libdrm_2.4.80.bb => libdrm_2.4.81.bb} | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+ rename meta/recipes-graphics/drm/{libdrm_2.4.80.bb => libdrm_2.4.81.bb} (93%)
+
+diff --git a/meta/recipes-graphics/drm/libdrm_2.4.80.bb b/meta/recipes-graphics/drm/libdrm_2.4.81.bb
+similarity index 93%
+rename from meta/recipes-graphics/drm/libdrm_2.4.80.bb
+rename to meta/recipes-graphics/drm/libdrm_2.4.81.bb
+index 063381f178..9181340a6c 100644
+--- a/meta/recipes-graphics/drm/libdrm_2.4.80.bb
++++ b/meta/recipes-graphics/drm/libdrm_2.4.81.bb
+@@ -16,8 +16,8 @@ SRC_URI = "http://dri.freedesktop.org/libdrm/${BP}.tar.bz2 \
+            file://0001-configure.ac-Allow-explicit-enabling-of-cunit-tests.patch \
+           "
+ 
+-SRC_URI[md5sum] = "4867866477f228973a64e68051ca9c66"
+-SRC_URI[sha256sum] = "a82a519601e9cdfad795e760807eb07ac8913b225e25fc8fe9bc03e3be6549f1"
++SRC_URI[md5sum] = "d04f3567f0a812188d06f860fded5ab7"
++SRC_URI[sha256sum] = "8cc05c195ac8708199979a94c4e4d1a928c14ec338ecbcb38ead09f54dae11ae"
+ 
+ inherit autotools pkgconfig manpages
+ 
+-- 
+2.11.0
+
