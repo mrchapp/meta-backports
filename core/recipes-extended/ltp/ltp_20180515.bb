@@ -49,6 +49,7 @@ SRC_URI = "git://github.com/linux-test-project/ltp.git \
            file://0039-commands-ar01-Fix-for-test-in-deterministic-mode.patch \
            file://0040-fs-read_all-define-FNM_EXTMATCH-if-needed.patch \
            file://0041-cve-2017-5669-shmat-for-0-or-PAGESIZE-with-RND-flag-.patch \
+           file://0042-cve-meltdown-read-saved_command_line.patch \
            "
 
 S = "${WORKDIR}/git"
