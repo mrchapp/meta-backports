@@ -7,18 +7,26 @@ DEPENDS = "sysfsutils"
 RDEPENDS_${PN} += "bash python python-io python-lang python-subprocess python-resource"
 RDEPENDS_${PN}-tests += "bash"
 
-PV = "2.20+git${SRCPV}+next"
+PV = "2.21"
 PE = "1"
 
-SRCREV = "02df38e93e25e07f4d54edae94fb4ec90b7a2824"
+SRCREV = "73d06e69108f231696e9c5c44f4b42690fc5d752"
 SRC_URI = " \
-    git://github.com/libhugetlbfs/libhugetlbfs.git;protocol=https;branch=next \
+    git://github.com/libhugetlbfs/libhugetlbfs.git;protocol=https \
     file://skip-checking-LIB32-and-LIB64-if-they-point-to-the-s.patch \
     file://libhugetlbfs-avoid-search-host-library-path-for-cros.patch \
     file://tests-Makefile-install-static-4G-edge-testcases.patch \
     file://0001-run_test.py-not-use-hard-coded-path-.-obj-hugeadm.patch \
     file://libhugetlbfs-elf_i386-avoid-search-host-library-path.patch \
+    file://0001-include-stddef.h-for-ptrdiff_t.patch \
+    file://0002-Mark-glibc-specific-code-so.patch \
+    file://0003-alloc.c-Avoid-sysconf-_SC_LEVEL2_CACHE_LINESIZE-on-l.patch \
+    file://0004-shm.c-Mark-glibc-specific-changes-so.patch \
+    file://0005-Include-dirent.h-for-ino_t.patch \
+    file://0006-include-limits.h-for-PATH_MAX.patch \
 "
+
+UPSTREAM_CHECK_GITTAGREGEX = "(?P<pver>\d+(\.\d+)+)"
 
 S = "${WORKDIR}/git"
 
