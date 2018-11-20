@@ -51,6 +51,7 @@ SRC_URI = "git://github.com/linux-test-project/ltp.git \
            file://0001-netns_helper.sh-use-ping-6-when-ping6-is-not-avaliab.patch \
            file://0001-open_posix_testsuite-mmap24-2-Relax-condition-a-bit.patch \
            file://0001-statx-fix-compile-errors.patch \
+		   file://0001-setrlimit05-Use-another-method-to-get-bad-address.patch \
            "
 
 S = "${WORKDIR}/git"
@@ -94,22 +95,19 @@ RDEPENDS_${PN} = "\
     curl \
     e2fsprogs-mke2fs \
     expect \
-    file \
     gawk \
     gzip \
     iproute2 \
     ldd \
     libaio \
     logrotate \
-    net-tools \
     perl \
-    procps \
     python-core \
-    quota \
-    tar \
+    procps \
     unzip \
     util-linux \
     which \
+    tar \
 "
 
 FILES_${PN} += "/opt/ltp/* /opt/ltp/runtest/* /opt/ltp/scenario_groups/* /opt/ltp/testcases/bin/* /opt/ltp/testcases/bin/*/bin/* /opt/ltp/testscripts/* /opt/ltp/testcases/open_posix_testsuite/* /opt/ltp/testcases/open_posix_testsuite/conformance/* /opt/ltp/testcases/open_posix_testsuite/Documentation/* /opt/ltp/testcases/open_posix_testsuite/functional/* /opt/ltp/testcases/open_posix_testsuite/include/* /opt/ltp/testcases/open_posix_testsuite/scripts/* /opt/ltp/testcases/open_posix_testsuite/stress/* /opt/ltp/testcases/open_posix_testsuite/tools/* /opt/ltp/testcases/data/nm01/lib.a /opt/ltp/lib/libmem.a"
