@@ -21,7 +21,7 @@ Signed-off-by: Yi Zhao <yi.zhao@windriver.com>
  1 file changed, 52 insertions(+), 40 deletions(-)
 
 diff --git a/testcases/commands/ar/ar01 b/testcases/commands/ar/ar01
-index ddab2e0..d688f76 100644
+index be105f6da..813a51d9c 100644
 --- a/testcases/commands/ar/ar01
 +++ b/testcases/commands/ar/ar01
 @@ -24,16 +24,28 @@
@@ -32,7 +32,7 @@ index ddab2e0..d688f76 100644
  TST_TESTFUNC=test
  TST_NEEDS_TMPDIR=1
  TST_NEEDS_CMDS="$AR"
- 
+
  . tst_test.sh
  
 +setup()
@@ -250,5 +250,5 @@ index ddab2e0..d688f76 100644
  	printf "x - file2.in\n" > ar.exp
  
 -- 
-2.7.4
+2.19.0.rc2
 

@@ -8,8 +8,6 @@ The testcases do define _GNU_SOURCE, but not the m4 struct check.
 
 Signed-off-by: Thadeu Lima de Souza Cascardo <cascardo@canonical.com>
 Acked-by: Cyril Hrubis <chrubis@suse.cz>
-
-Upstream-Status: Backport [a945304b6 statx: fix compile errors]
 ---
  m4/ltp-statx.m4 | 9 +++++++--
  1 file changed, 7 insertions(+), 2 deletions(-)
@@ -32,6 +30,5 @@ index 44303d30c..5f79a94cd 100644
 +	#define _GNU_SOURCE
 +	#include <sys/stat.h>]])
  ])
--- 
-2.17.1
-
+--
+2.19.1
