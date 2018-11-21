@@ -95,15 +95,18 @@ RDEPENDS_${PN} = "\
     curl \
     e2fsprogs-mke2fs \
     expect \
+    file \
     gawk \
     gzip \
     iproute2 \
     ldd \
     libaio \
     logrotate \
+    net-tools \
     perl \
     python-core \
     procps \
+    quota \
     unzip \
     util-linux \
     which \
