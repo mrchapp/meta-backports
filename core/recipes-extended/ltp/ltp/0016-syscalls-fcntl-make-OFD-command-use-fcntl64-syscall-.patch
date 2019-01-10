@@ -1,0 +1,78 @@
+From 547e4345b6803fad24f022ee6bea809a3d0ab64b Mon Sep 17 00:00:00 2001
+From: "Hongzhi.Song" <hongzhi.song@windriver.com>
+Date: Sat, 15 Sep 2018 22:39:32 -0400
+Subject: [PATCH 16/17] syscalls/fcntl: make OFD command use fcntl64() syscall
+ on 32-bit
+
+To cope with glibc commit:
+  06ab719d30b0 ("Fix Linux fcntl OFD locks for non-LFS architectures
+(BZ#20251)")
+
+WIP: Still need to test this with new glibc.
+     Test with old glibc look OK so far.
+
+Signed-off-by: Jan Stancek <jstancek@redhat.com>
+
+Upstream-Status: Backport
+    Backported from upstream maillist
+    https://lists.linux.it/pipermail/ltp/2018-September/009370.html
+
+Signed-off-by: Hongzhi Song <hongzhi.song@windriver.com>
+---
+ testcases/kernel/syscalls/fcntl/fcntl34.c |  7 ++++++-
+ testcases/kernel/syscalls/fcntl/fcntl36.c | 14 ++++++++++++--
+ 2 files changed, 18 insertions(+), 3 deletions(-)
+
+diff --git a/testcases/kernel/syscalls/fcntl/fcntl34.c b/testcases/kernel/syscalls/fcntl/fcntl34.c
+index 6c7dd8c03..b8b9401df 100644
+--- a/testcases/kernel/syscalls/fcntl/fcntl34.c
++++ b/testcases/kernel/syscalls/fcntl/fcntl34.c
+@@ -69,7 +69,12 @@ void *thread_fn_01(void *arg)
+ 
+ 	memset(buf, (intptr_t)arg, write_size);
+ 
+-	struct flock64 lck = {
++    /* see explanation in fcntl_common.h */
++    #ifdef USE_STRUCT_FLOCK
++        struct flock lck = {
++    #else
++        struct flock64 lck = {
++    #endif
+ 		.l_whence = SEEK_SET,
+ 		.l_start  = 0,
+ 		.l_len    = 1,
+diff --git a/testcases/kernel/syscalls/fcntl/fcntl36.c b/testcases/kernel/syscalls/fcntl/fcntl36.c
+index 2942e4e6a..cd274ff7c 100644
+--- a/testcases/kernel/syscalls/fcntl/fcntl36.c
++++ b/testcases/kernel/syscalls/fcntl/fcntl36.c
+@@ -88,7 +88,12 @@ static void *fn_ofd_w(void *arg)
+ 	int fd = SAFE_OPEN(fname, O_RDWR);
+ 	long wt = pa->cnt;
+ 
+-	struct flock64 lck = {
++    /* see explanation in fcntl_common.h */
++    #ifdef USE_STRUCT_FLOCK
++        struct flock lck = {
++    #else
++        struct flock64 lck = {
++    #endif
+ 		.l_whence = SEEK_SET,
+ 		.l_start  = pa->offset,
+ 		.l_len    = pa->length,
+@@ -167,7 +172,12 @@ static void *fn_ofd_r(void *arg)
+ 	int i;
+ 	int fd = SAFE_OPEN(fname, O_RDWR);
+ 
+-	struct flock64 lck = {
++    /* see explanation in fcntl_common.h */
++    #ifdef USE_STRUCT_FLOCK
++        struct flock lck = {
++    #else
++        struct flock64 lck = {
++    #endif
+ 		.l_whence = SEEK_SET,
+ 		.l_start  = pa->offset,
+ 		.l_len    = pa->length,
+-- 
+2.17.1
+

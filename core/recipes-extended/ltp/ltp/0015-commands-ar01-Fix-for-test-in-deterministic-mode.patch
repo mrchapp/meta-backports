@@ -1,7 +1,7 @@
-From 04da9478887e705ea38e4f097492da20e651686c Mon Sep 17 00:00:00 2001
+From 8ec559bac3770a3a39b15cab54df5f718db84622 Mon Sep 17 00:00:00 2001
 From: Guangwen Feng <fenggw-fnst@cn.fujitsu.com>
 Date: Wed, 13 Sep 2017 15:48:42 +0800
-Subject: [PATCH] commands/ar01: Fix for test in deterministic mode
+Subject: [PATCH 15/17] commands/ar01: Fix for test in deterministic mode
 
 If binutils was configured with --enable-deterministic-archives,
 ar will run in deterministic mode by default, and use zero for
@@ -17,7 +17,7 @@ Upstream-Status: Backport
 
 Signed-off-by: Yi Zhao <yi.zhao@windriver.com>
 ---
- testcases/commands/ar/ar01 | 92 ++++++++++++++++++++++++++--------------------
+ testcases/commands/ar/ar01 | 92 +++++++++++++++++++++-----------------
  1 file changed, 52 insertions(+), 40 deletions(-)
 
 diff --git a/testcases/commands/ar/ar01 b/testcases/commands/ar/ar01
@@ -32,7 +32,7 @@ index be105f6da..813a51d9c 100644
  TST_TESTFUNC=test
  TST_NEEDS_TMPDIR=1
  TST_NEEDS_CMDS="$AR"
-
+ 
  . tst_test.sh
  
 +setup()
@@ -250,5 +250,5 @@ index be105f6da..813a51d9c 100644
  	printf "x - file2.in\n" > ar.exp
  
 -- 
-2.19.0.rc2
+2.17.1
 

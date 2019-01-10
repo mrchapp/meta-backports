@@ -1,7 +1,7 @@
-From d1a27570457fb6e1d6bafe81bfa0f3507b137e32 Mon Sep 17 00:00:00 2001
+From bda79bfde51bce1278a602347e824e68ab97b281 Mon Sep 17 00:00:00 2001
 From: Dengke Du <dengke.du@windriver.com>
 Date: Thu, 9 Feb 2017 18:20:58 +0800
-Subject: [PATCH] fix __WORDSIZE undeclared when building with musl
+Subject: [PATCH 03/17] fix __WORDSIZE undeclared when building with musl
 
 fix __WORDSIZE undeclared when building with musl.
 
@@ -13,10 +13,10 @@ Signed-off-by: Dengke Du <dengke.du@windriver.com>
  1 file changed, 3 insertions(+)
 
 diff --git a/include/old/test.h b/include/old/test.h
-index b36764d83..cc6f1b551 100644
+index 0738237e9..9f13c97fe 100644
 --- a/include/old/test.h
 +++ b/include/old/test.h
-@@ -44,6 +44,9 @@
+@@ -17,6 +17,9 @@
  #include <string.h>
  #include <stdlib.h>
  #include <stdint.h>
@@ -27,5 +27,5 @@ index b36764d83..cc6f1b551 100644
  #include "usctest.h"
  
 -- 
-2.11.0
+2.17.1
 

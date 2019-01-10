@@ -1,7 +1,7 @@
-From 85c972f730e8efe891a06ea3a2dfb5cbbdfbfbf4 Mon Sep 17 00:00:00 2001
+From 563d503b3a391c7bbdf44eb76bd6e718be24a12f Mon Sep 17 00:00:00 2001
 From: "Hongzhi.Song" <hongzhi.song@windriver.com>
 Date: Wed, 10 Oct 2018 22:07:05 -0400
-Subject: [PATCH] open_posix_testsuite/mmap24-2: Relax condition a bit
+Subject: [PATCH 17/17] open_posix_testsuite/mmap24-2: Relax condition a bit
 
 Mips will return EINVAL instead of ENOMEM as expected
 if the range [addr + len) exceeds TASK_SIZE.
@@ -19,11 +19,11 @@ Upstream-Status: Submitted [https://lists.linux.it/pipermail/ltp/2018-October/00
 
 Signed-off-by: Hongzhi.Song <hongzhi.song@windriver.com>
 ---
- .../open_posix_testsuite/conformance/interfaces/mmap/24-2.c    | 10 +++++-----
+ .../conformance/interfaces/mmap/24-2.c                 | 10 +++++-----
  1 file changed, 5 insertions(+), 5 deletions(-)
 
 diff --git a/testcases/open_posix_testsuite/conformance/interfaces/mmap/24-2.c b/testcases/open_posix_testsuite/conformance/interfaces/mmap/24-2.c
-index de51d43..810e5c8 100644
+index 9cf83d9a3..55090a6e6 100644
 --- a/testcases/open_posix_testsuite/conformance/interfaces/mmap/24-2.c
 +++ b/testcases/open_posix_testsuite/conformance/interfaces/mmap/24-2.c
 @@ -7,7 +7,7 @@
@@ -43,8 +43,8 @@ index de51d43..810e5c8 100644
 + * 3. Should get ENOMEM or EINVAL.
   */
  
- #define _XOPEN_SOURCE 600
-@@ -93,8 +93,8 @@ int main(void)
+ #include <stdio.h>
+@@ -92,8 +92,8 @@ int main(void)
  	       (unsigned long)len);
  	pa = mmap(addr, len, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_SHARED, fd,
  		  0);
@@ -55,7 +55,7 @@ index de51d43..810e5c8 100644
  		exit(PTS_PASS);
  	}
  
-@@ -103,6 +103,6 @@ int main(void)
+@@ -102,6 +102,6 @@ int main(void)
  	else
  		munmap(pa, len);
  	close(fd);
@@ -64,5 +64,5 @@ index de51d43..810e5c8 100644
  	return PTS_FAIL;
  }
 -- 
-2.8.1
+2.17.1
 

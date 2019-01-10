@@ -27,31 +27,26 @@ CFLAGS_append_x86-64 = " -fomit-frame-pointer"
 
 CFLAGS_append_powerpc64 = " -D__SANE_USERSPACE_TYPES__"
 CFLAGS_append_mipsarchn64 = " -D__SANE_USERSPACE_TYPES__"
-SRCREV = "f424769b1ad9fca477118763f88a6cec98ea2c0a"
+SRCREV = "0cd0d9ef09f0afb4e7419997a5974f373f32fcec"
 
 SRC_URI = "git://github.com/linux-test-project/ltp.git \
-           file://0004-build-Add-option-to-select-libc-implementation.patch \
-           file://0005-kernel-controllers-Link-with-libfts-explicitly-on-mu.patch \
-           file://0007-fix-__WORDSIZE-undeclared-when-building-with-musl.patch \
-           file://0008-Check-if-__GLIBC_PREREQ-is-defined-before-using-it.patch \
-           file://0009-fix-redefinition-of-struct-msgbuf-error-building-wit.patch \
-           file://0018-guard-mallocopt-with-__GLIBC__.patch \
-           file://0020-getdents-define-getdents-getdents64-only-for-glibc.patch \
-           file://0021-Define-_GNU_SOURCE-for-MREMAP_MAYMOVE-definition.patch \
-           file://0023-ptrace-Use-int-instead-of-enum-__ptrace_request.patch \
-           file://0024-rt_sigaction-rt_sigprocmark-Define-_GNU_SOURCE.patch \
-           file://0026-crash01-Define-_GNU_SOURCE.patch \
-           file://0028-rt_sigaction.h-Use-sighandler_t-instead-of-__sighand.patch \
-           file://0034-periodic_output.patch \
-           file://0035-fix-test_proc_kill-hang.patch \
-           file://0036-testcases-network-nfsv4-acl-acl1.c-Security-fix-on-s.patch \
-           file://0039-commands-ar01-Fix-for-test-in-deterministic-mode.patch \
-           file://0001-syscalls-fcntl-make-OFD-command-use-fcntl64-syscall-.patch \
-           file://0001-sigwaitinfo01-recent-glibc-calls-syscall-directly.patch \
-           file://0001-netns_helper.sh-use-ping-6-when-ping6-is-not-avaliab.patch \
-           file://0001-open_posix_testsuite-mmap24-2-Relax-condition-a-bit.patch \
-           file://0001-statx-fix-compile-errors.patch \
-		   file://0001-setrlimit05-Use-another-method-to-get-bad-address.patch \
+           file://0001-build-Add-option-to-select-libc-implementation.patch \
+           file://0002-kernel-controllers-Link-with-libfts-explicitly-on-mu.patch \
+           file://0003-fix-__WORDSIZE-undeclared-when-building-with-musl.patch \
+           file://0004-fix-redefinition-of-struct-msgbuf-error-building-wit.patch \
+           file://0005-guard-mallocopt-with-__GLIBC__.patch \
+           file://0006-getdents-define-getdents-getdents64-only-for-glibc.patch \
+           file://0007-Define-_GNU_SOURCE-for-MREMAP_MAYMOVE-definition.patch \
+           file://0008-ptrace-Use-int-instead-of-enum-__ptrace_request.patch \
+           file://0009-rt_sigaction-rt_sigprocmark-Define-_GNU_SOURCE.patch \
+           file://0010-crash01-Define-_GNU_SOURCE.patch \
+           file://0011-rt_sigaction.h-Use-sighandler_t-instead-of-__sighand.patch \
+           file://0012-Add-periodic-output-for-long-time-test.patch \
+           file://0013-Fix-test_proc_kill-hanging.patch \
+           file://0014-testcases-network-nfsv4-acl-acl1.c-Security-fix-on-s.patch \
+           file://0015-commands-ar01-Fix-for-test-in-deterministic-mode.patch \
+           file://0016-syscalls-fcntl-make-OFD-command-use-fcntl64-syscall-.patch \
+           file://0017-open_posix_testsuite-mmap24-2-Relax-condition-a-bit.patch \
            "
 
 S = "${WORKDIR}/git"

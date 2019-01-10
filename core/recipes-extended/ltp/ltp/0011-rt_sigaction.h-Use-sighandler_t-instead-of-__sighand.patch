@@ -1,7 +1,7 @@
-From 94557fb7e1293c61145c959b8c5ffecf4a2b1069 Mon Sep 17 00:00:00 2001
+From 0462d82431b6020abd14e73555153cdda24c1f43 Mon Sep 17 00:00:00 2001
 From: Khem Raj <raj.khem@gmail.com>
 Date: Fri, 8 Jan 2016 07:24:44 +0000
-Subject: [PATCH 28/32] rt_sigaction.h: Use sighandler_t instead of
+Subject: [PATCH 11/17] rt_sigaction.h: Use sighandler_t instead of
  __sighandler_t
 
 When _GNU_SOURCE is used then both typedefs are same and using
@@ -16,7 +16,7 @@ Upstream-Status: Pending
  2 files changed, 5 insertions(+), 2 deletions(-)
 
 diff --git a/include/lapi/rt_sigaction.h b/include/lapi/rt_sigaction.h
-index 18236db..15facda 100644
+index 2dbbc7672..9d6a9ba94 100644
 --- a/include/lapi/rt_sigaction.h
 +++ b/include/lapi/rt_sigaction.h
 @@ -36,12 +36,12 @@
@@ -35,7 +35,7 @@ index 18236db..15facda 100644
  	void (*sa_restorer) (void);
  	sigset_t sa_mask;
 diff --git a/testcases/kernel/syscalls/rt_sigsuspend/Makefile b/testcases/kernel/syscalls/rt_sigsuspend/Makefile
-index 37bc3a9..2ca7f7c 100644
+index 37bc3a910..2ca7f7c81 100644
 --- a/testcases/kernel/syscalls/rt_sigsuspend/Makefile
 +++ b/testcases/kernel/syscalls/rt_sigsuspend/Makefile
 @@ -19,4 +19,7 @@
@@ -46,3 +46,6 @@ index 37bc3a9..2ca7f7c 100644
 +CFLAGS	+= -D_GNU_SOURCE
 +
  include $(top_srcdir)/include/mk/generic_leaf_target.mk
+-- 
+2.17.1
+

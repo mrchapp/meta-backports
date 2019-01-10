@@ -1,7 +1,7 @@
-From 560347f77236616a635b4a997a0596b8da4d0799 Mon Sep 17 00:00:00 2001
+From 5559d235e46a674c33c4be7da2fb64981b2bd51a Mon Sep 17 00:00:00 2001
 From: Khem Raj <raj.khem@gmail.com>
 Date: Fri, 8 Jan 2016 07:08:25 +0000
-Subject: [PATCH 23/32] ptrace:  Use int instead of enum __ptrace_request
+Subject: [PATCH 08/17] ptrace: Use int instead of enum __ptrace_request
 
 __ptrace_request is only available with glibc
 
@@ -14,7 +14,7 @@ Upstream-Status: Pending
  2 files changed, 8 insertions(+)
 
 diff --git a/testcases/kernel/syscalls/ptrace/ptrace03.c b/testcases/kernel/syscalls/ptrace/ptrace03.c
-index a4028fc..f1880cd 100644
+index a4028fc26..f1880cd3b 100644
 --- a/testcases/kernel/syscalls/ptrace/ptrace03.c
 +++ b/testcases/kernel/syscalls/ptrace/ptrace03.c
 @@ -102,7 +102,11 @@ static pid_t unused_pid;
@@ -30,7 +30,7 @@ index a4028fc..f1880cd 100644
  	int exp_errno;
  } test_cases[] = {
 diff --git a/testcases/kernel/syscalls/ptrace/spawn_ptrace_child.h b/testcases/kernel/syscalls/ptrace/spawn_ptrace_child.h
-index ae538e9..85aa89d 100644
+index ae538e900..85aa89df2 100644
 --- a/testcases/kernel/syscalls/ptrace/spawn_ptrace_child.h
 +++ b/testcases/kernel/syscalls/ptrace/spawn_ptrace_child.h
 @@ -130,7 +130,11 @@ static char *strings[] = {
@@ -46,5 +46,5 @@ index ae538e9..85aa89d 100644
  	return strings[request];
  }
 -- 
-2.7.0
+2.17.1
 
