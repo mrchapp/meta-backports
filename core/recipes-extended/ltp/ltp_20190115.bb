@@ -27,13 +27,12 @@ CFLAGS_append_x86-64 = " -fomit-frame-pointer"
 
 CFLAGS_append_powerpc64 = " -D__SANE_USERSPACE_TYPES__"
 CFLAGS_append_mipsarchn64 = " -D__SANE_USERSPACE_TYPES__"
-SRCREV = "f424769b1ad9fca477118763f88a6cec98ea2c0a"
+SRCREV = "0cd0d9ef09f0afb4e7419997a5974f373f32fcec"
 
 SRC_URI = "git://github.com/linux-test-project/ltp.git \
            file://0004-build-Add-option-to-select-libc-implementation.patch \
            file://0005-kernel-controllers-Link-with-libfts-explicitly-on-mu.patch \
            file://0007-fix-__WORDSIZE-undeclared-when-building-with-musl.patch \
-           file://0008-Check-if-__GLIBC_PREREQ-is-defined-before-using-it.patch \
            file://0009-fix-redefinition-of-struct-msgbuf-error-building-wit.patch \
            file://0018-guard-mallocopt-with-__GLIBC__.patch \
            file://0020-getdents-define-getdents-getdents64-only-for-glibc.patch \
@@ -46,12 +45,7 @@ SRC_URI = "git://github.com/linux-test-project/ltp.git \
            file://0035-fix-test_proc_kill-hang.patch \
            file://0036-testcases-network-nfsv4-acl-acl1.c-Security-fix-on-s.patch \
            file://0039-commands-ar01-Fix-for-test-in-deterministic-mode.patch \
-           file://0001-syscalls-fcntl-make-OFD-command-use-fcntl64-syscall-.patch \
-           file://0001-sigwaitinfo01-recent-glibc-calls-syscall-directly.patch \
-           file://0001-netns_helper.sh-use-ping-6-when-ping6-is-not-avaliab.patch \
            file://0001-open_posix_testsuite-mmap24-2-Relax-condition-a-bit.patch \
-           file://0001-statx-fix-compile-errors.patch \
-		   file://0001-setrlimit05-Use-another-method-to-get-bad-address.patch \
            "
 
 S = "${WORKDIR}/git"
