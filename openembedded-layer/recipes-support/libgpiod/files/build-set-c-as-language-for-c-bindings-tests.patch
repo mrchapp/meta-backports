@@ -1,0 +1,30 @@
+From 63ef77de806c377af8eaf53774d2850c43009d5e Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Daniel=20D=C3=ADaz?= <yosoy@danieldiaz.org>
+Date: Fri, 15 Mar 2019 17:58:55 -0600
+Subject: [PATCH] build: Set C++ as language for C++ bindings tests
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Daniel Díaz <yosoy@danieldiaz.org>
+Upstream-Status: Pending
+
+---
+ configure.ac | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/configure.ac b/configure.ac
+index 4adff7b..701fbbf 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -136,6 +136,7 @@ AM_CONDITIONAL([WITH_BINDINGS_CXX], [test "x$with_bindings_cxx" = xtrue])
+ if test "x$with_bindings_cxx" = xtrue
+ then
+ 	AC_LIBTOOL_CXX
++	AC_LANG([C++])
+ 	# This needs autoconf-archive
+ 	AX_CXX_COMPILE_STDCXX_11([ext], [mandatory])
+ fi
+-- 
+2.17.1
+
