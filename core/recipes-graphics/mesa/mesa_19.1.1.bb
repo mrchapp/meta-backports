@@ -4,6 +4,7 @@ SRC_URI = "https://mesa.freedesktop.org/archive/mesa-${PV}.tar.xz \
            file://0001-meson.build-check-for-all-linux-host_os-combinations.patch \
            file://0002-meson.build-make-TLS-GLX-optional-again.patch \
            file://0003-Allow-enable-DRI-without-DRI-drivers.patch \
+           file://0004-freedreno-Fix-assertion-failures-in-context-setup-in.patch \
            "
 
 SRC_URI[md5sum] = "07cd8cd79de28ec1a374ee3a06e47789"

@@ -1,0 +1,72 @@
+From 26a0feb6853d23a8946e73f2980d3a5aa8c57684 Mon Sep 17 00:00:00 2001
+From: Eric Anholt <eric@anholt.net>
+Date: Mon, 13 May 2019 16:58:51 -0700
+Subject: [PATCH] freedreno: Fix assertion failures in context setup in
+ shader-db mode.
+
+Cherry-picks a0d4d7febff56ec7f4a4396f7b893319958f97d3 upstream
+
+The TTN path needs access to the screen to make the right decisions about
+lowering, but we didn't have pctx->screen set up at fdN_prog_init time.
+
+Reviewed-by: Rob Clark <robdclark@gmail.com>
+Tested-by: Eduardo Lima Mitev <elima@igalia.com>
+Signed-off-by: John Stultz <john.stultz@linaro.org>
+---
+ src/gallium/drivers/freedreno/a3xx/fd3_context.c | 1 +
+ src/gallium/drivers/freedreno/a4xx/fd4_context.c | 1 +
+ src/gallium/drivers/freedreno/a5xx/fd5_context.c | 1 +
+ src/gallium/drivers/freedreno/a6xx/fd6_context.c | 1 +
+ 4 files changed, 4 insertions(+)
+
+diff --git a/src/gallium/drivers/freedreno/a3xx/fd3_context.c b/src/gallium/drivers/freedreno/a3xx/fd3_context.c
+index 59dcaa4bf6b..878f67afba0 100644
+--- a/src/gallium/drivers/freedreno/a3xx/fd3_context.c
++++ b/src/gallium/drivers/freedreno/a3xx/fd3_context.c
+@@ -79,6 +79,7 @@ fd3_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
+ 		return NULL;
+ 
+ 	pctx = &fd3_ctx->base.base;
++	pctx->screen = pscreen;
+ 
+ 	fd3_ctx->base.dev = fd_device_ref(screen->dev);
+ 	fd3_ctx->base.screen = fd_screen(pscreen);
+diff --git a/src/gallium/drivers/freedreno/a4xx/fd4_context.c b/src/gallium/drivers/freedreno/a4xx/fd4_context.c
+index e9730e9c209..896050918dc 100644
+--- a/src/gallium/drivers/freedreno/a4xx/fd4_context.c
++++ b/src/gallium/drivers/freedreno/a4xx/fd4_context.c
+@@ -79,6 +79,7 @@ fd4_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
+ 		return NULL;
+ 
+ 	pctx = &fd4_ctx->base.base;
++	pctx->screen = pscreen;
+ 
+ 	fd4_ctx->base.dev = fd_device_ref(screen->dev);
+ 	fd4_ctx->base.screen = fd_screen(pscreen);
+diff --git a/src/gallium/drivers/freedreno/a5xx/fd5_context.c b/src/gallium/drivers/freedreno/a5xx/fd5_context.c
+index 37e02c61b1f..211d2b5fee5 100644
+--- a/src/gallium/drivers/freedreno/a5xx/fd5_context.c
++++ b/src/gallium/drivers/freedreno/a5xx/fd5_context.c
+@@ -78,6 +78,7 @@ fd5_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
+ 		return NULL;
+ 
+ 	pctx = &fd5_ctx->base.base;
++	pctx->screen = pscreen;
+ 
+ 	fd5_ctx->base.dev = fd_device_ref(screen->dev);
+ 	fd5_ctx->base.screen = fd_screen(pscreen);
+diff --git a/src/gallium/drivers/freedreno/a6xx/fd6_context.c b/src/gallium/drivers/freedreno/a6xx/fd6_context.c
+index 7ba0926e3a0..4f696ef092c 100644
+--- a/src/gallium/drivers/freedreno/a6xx/fd6_context.c
++++ b/src/gallium/drivers/freedreno/a6xx/fd6_context.c
+@@ -84,6 +84,7 @@ fd6_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
+ 		return NULL;
+ 
+ 	pctx = &fd6_ctx->base.base;
++	pctx->screen = pscreen;
+ 
+ 	fd6_ctx->base.dev = fd_device_ref(screen->dev);
+ 	fd6_ctx->base.screen = fd_screen(pscreen);
+-- 
+2.20.1
+
